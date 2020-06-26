@@ -15,6 +15,7 @@
  */
 package okhttp3;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.net.HttpURLConnection;
@@ -22,6 +23,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.UnknownHostException;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -37,8 +39,6 @@ import okhttp3.CallEvent.ConnectionAcquired;
 import okhttp3.CallEvent.ConnectionReleased;
 import okhttp3.CallEvent.DnsEnd;
 import okhttp3.CallEvent.DnsStart;
-import okhttp3.CallEvent.ProxySelectEnd;
-import okhttp3.CallEvent.ProxySelectStart;
 import okhttp3.CallEvent.RequestBodyEnd;
 import okhttp3.CallEvent.RequestBodyStart;
 import okhttp3.CallEvent.RequestHeadersEnd;
@@ -97,9 +97,11 @@ public final class EventListenerTest {
       .eventListenerFactory(clientTestRule.wrap(listener))
       .build();
   private SocksProxy socksProxy;
+  private Cache cache = null;
 
   @Before public void setUp() {
     platform.assumeNotOpenJSSE();
+    platform.assumeNotBouncyCastle();
 
     listener.forbidLock(RealConnectionPool.Companion.get(client.connectionPool()));
     listener.forbidLock(client.dispatcher());
@@ -108,6 +110,9 @@ public final class EventListenerTest {
   @After public void tearDown() throws Exception {
     if (socksProxy != null) {
       socksProxy.shutdown();
+    }
+    if (cache != null) {
+      cache.delete();
     }
   }
 
@@ -166,7 +171,7 @@ public final class EventListenerTest {
         .setHeadersDelay(2, TimeUnit.SECONDS));
 
     client = client.newBuilder()
-        .readTimeout(250, TimeUnit.MILLISECONDS)
+        .readTimeout(Duration.ofMillis(250))
         .build();
 
     Call call = client.newCall(new Request.Builder()
@@ -192,7 +197,7 @@ public final class EventListenerTest {
 
     client = client.newBuilder()
         .protocols(Collections.singletonList(Protocol.HTTP_1_1))
-        .readTimeout(250, TimeUnit.MILLISECONDS)
+        .readTimeout(Duration.ofMillis(250))
         .build();
 
     Call call = client.newCall(new Request.Builder()
@@ -228,8 +233,41 @@ public final class EventListenerTest {
       assertThat(expected.getMessage()).isEqualTo("Canceled");
     }
 
-    assertThat(listener.recordedEventTypes())
-        .containsExactly("CallStart", "ProxySelectStart", "ProxySelectEnd", "CallFailed");
+    assertThat(listener.recordedEventTypes()).containsExactly(
+        "Canceled", "CallStart", "CallFailed");
+  }
+
+  @Test public void cancelAsyncCall() throws IOException {
+    server.enqueue(new MockResponse()
+        .setBody("abc"));
+
+    Call call = client.newCall(new Request.Builder()
+        .url(server.url("/"))
+        .build());
+    call.enqueue(new Callback() {
+      @Override public void onFailure(Call call, IOException e) {
+      }
+
+      @Override public void onResponse(Call call, Response response) throws IOException {
+        response.close();
+      }
+    });
+    call.cancel();
+
+    assertThat(listener.recordedEventTypes()).contains("Canceled");
+  }
+
+  @Test public void multipleCancelsEmitsOnlyOneEvent() throws IOException {
+    server.enqueue(new MockResponse()
+        .setBody("abc"));
+
+    Call call = client.newCall(new Request.Builder()
+        .url(server.url("/"))
+        .build());
+    call.cancel();
+    call.cancel();
+
+    assertThat(listener.recordedEventTypes()).containsExactly("Canceled");
   }
 
   private void assertSuccessfulEventOrder(Matcher<Response> responseMatcher) throws IOException {
@@ -269,8 +307,7 @@ public final class EventListenerTest {
     Response response = call.execute();
     response.close();
 
-    assertThat(listener.recordedEventTypes()).containsExactly("CallStart",
-        "ProxySelectStart", "ProxySelectEnd", "ConnectionAcquired",
+    assertThat(listener.recordedEventTypes()).containsExactly("CallStart", "ConnectionAcquired",
         "RequestHeadersStart", "RequestHeadersEnd", "ResponseHeadersStart", "ResponseHeadersEnd",
         "ResponseBodyStart", "ResponseBodyEnd", "ConnectionReleased", "CallEnd");
   }
@@ -1258,9 +1295,7 @@ public final class EventListenerTest {
 
     // Confirm the events occur when expected.
     listener.takeEvent(CallStart.class, 0L);
-    listener.takeEvent(ProxySelectStart.class, applicationInterceptorDelay);
-    listener.takeEvent(ProxySelectEnd.class, 0L);
-    listener.takeEvent(ConnectionAcquired.class, 0L);
+    listener.takeEvent(ConnectionAcquired.class, applicationInterceptorDelay);
     listener.takeEvent(RequestHeadersStart.class, networkInterceptorDelay);
     listener.takeEvent(RequestHeadersEnd.class, 0L);
     listener.takeEvent(RequestBodyStart.class, 0L);
@@ -1283,10 +1318,9 @@ public final class EventListenerTest {
   }
 
   @Test public void redirectUsingSameConnectionEventSequence() throws IOException {
-    server.enqueue(
-        new MockResponse()
-            .setResponseCode(HttpURLConnection.HTTP_MOVED_TEMP)
-            .addHeader("Location: /foo"));
+    server.enqueue(new MockResponse()
+        .setResponseCode(HttpURLConnection.HTTP_MOVED_TEMP)
+        .addHeader("Location: /foo"));
     server.enqueue(new MockResponse());
 
     Call call = client.newCall(new Request.Builder().url(server.url("/")).build());
@@ -1413,5 +1447,142 @@ public final class EventListenerTest {
     listener.takeEvent(RequestBodyStart.class, 0L);
     listener.takeEvent(RequestBodyEnd.class, 0L);
     listener.takeEvent(ResponseHeadersEnd.class, responseHeadersStartDelay);
+  }
+
+  @Test public void cacheMiss() throws IOException {
+    enableCache();
+
+    server.enqueue(new MockResponse()
+        .setBody("abc"));
+
+    Call call = client.newCall(new Request.Builder()
+        .url(server.url("/"))
+        .build());
+    Response response = call.execute();
+    assertThat(response.code()).isEqualTo(200);
+    assertThat(response.body().string()).isEqualTo("abc");
+    response.close();
+
+    assertThat(listener.recordedEventTypes()).containsExactly("CallStart", "CacheMiss",
+        "ProxySelectStart", "ProxySelectEnd", "DnsStart", "DnsEnd",
+        "ConnectStart", "ConnectEnd", "ConnectionAcquired", "RequestHeadersStart",
+        "RequestHeadersEnd", "ResponseHeadersStart", "ResponseHeadersEnd",
+        "ResponseBodyStart", "ResponseBodyEnd", "ConnectionReleased", "CallEnd");
+  }
+
+  @Test public void conditionalCache() throws IOException {
+    enableCache();
+
+    server.enqueue(new MockResponse()
+        .addHeader("ETag: v1")
+        .setBody("abc"));
+    server.enqueue(new MockResponse()
+        .setResponseCode(HttpURLConnection.HTTP_NOT_MODIFIED));
+
+    Call call = client.newCall(new Request.Builder()
+        .url(server.url("/"))
+        .build());
+
+    Response response = call.execute();
+    assertThat(response.code()).isEqualTo(200);
+    response.close();
+
+    listener.clearAllEvents();
+
+    call = call.clone();
+
+    response = call.execute();
+    assertThat(response.code()).isEqualTo(200);
+    assertThat(response.body().string()).isEqualTo("abc");
+    response.close();
+
+    assertThat(listener.recordedEventTypes()).containsExactly("CallStart", "CacheConditionalHit",
+        "ConnectionAcquired", "RequestHeadersStart",
+        "RequestHeadersEnd", "ResponseHeadersStart", "ResponseHeadersEnd",
+        "ResponseBodyStart", "ResponseBodyEnd", "CacheHit", "ConnectionReleased", "CallEnd");
+  }
+
+  @Test public void conditionalCacheMiss() throws IOException {
+    enableCache();
+
+    server.enqueue(new MockResponse()
+        .addHeader("ETag: v1")
+        .setBody("abc"));
+    server.enqueue(new MockResponse()
+        .setResponseCode(HttpURLConnection.HTTP_OK)
+        .addHeader("ETag: v2")
+        .setBody("abd"));
+
+    Call call = client.newCall(new Request.Builder()
+        .url(server.url("/"))
+        .build());
+
+    Response response = call.execute();
+    assertThat(response.code()).isEqualTo(200);
+    response.close();
+
+    listener.clearAllEvents();
+
+    call = call.clone();
+
+    response = call.execute();
+    assertThat(response.code()).isEqualTo(200);
+    assertThat(response.body().string()).isEqualTo("abd");
+    response.close();
+
+    assertThat(listener.recordedEventTypes()).containsExactly("CallStart", "CacheConditionalHit",
+        "ConnectionAcquired", "RequestHeadersStart",
+        "RequestHeadersEnd", "ResponseHeadersStart", "ResponseHeadersEnd", "CacheMiss",
+        "ResponseBodyStart", "ResponseBodyEnd", "ConnectionReleased", "CallEnd");
+  }
+
+  @Test public void satisfactionFailure() throws IOException {
+    enableCache();
+
+    Call call = client.newCall(new Request.Builder()
+        .url(server.url("/"))
+        .cacheControl(CacheControl.FORCE_CACHE)
+        .build());
+    Response response = call.execute();
+    assertThat(response.code()).isEqualTo(504);
+    response.close();
+
+    assertThat(listener.recordedEventTypes()).containsExactly("CallStart", "SatisfactionFailure", "CallEnd");
+  }
+
+  @Test public void cacheHit() throws IOException {
+    enableCache();
+
+    server.enqueue(new MockResponse().setBody("abc").addHeader("cache-control: public, max-age=300"));
+
+    Call call = client.newCall(new Request.Builder()
+        .url(server.url("/"))
+        .build());
+    Response response = call.execute();
+    assertThat(response.code()).isEqualTo(200);
+    assertThat(response.body().string()).isEqualTo("abc");
+    response.close();
+
+    listener.clearAllEvents();
+
+    call = call.clone();
+    response = call.execute();
+    assertThat(response.code()).isEqualTo(200);
+    assertThat(response.body().string()).isEqualTo("abc");
+    response.close();
+
+    assertThat(listener.recordedEventTypes()).containsExactly("CallStart", "CacheHit", "CallEnd");
+  }
+
+  private Cache enableCache() throws IOException {
+    cache = makeCache();
+    client = client.newBuilder().cache(cache).build();
+    return cache;
+  }
+
+  private Cache makeCache() throws IOException {
+    File cacheDir = File.createTempFile("cache-", ".dir");
+    cacheDir.delete();
+    return new Cache(cacheDir, 1024 * 1024);
   }
 }

@@ -440,6 +440,13 @@ public final class HttpUrlTest {
         .test(Component.HOST);
   }
 
+  /** This one's ugly: the HttpUrl's host is non-empty, but the URI's host is null. */
+  @Test public void hostContainsOnlyStrippedCharacters() throws Exception {
+    HttpUrl url = parse("http://>/");
+    assertThat(url.host()).isEqualTo(">");
+    assertThat(url.uri().getHost()).isNull();
+  }
+
   @Test public void hostIpv6() throws Exception {
     // Square braces are absent from host()...
     assertThat(parse("http://[::1]/").host()).isEqualTo("::1");
@@ -1749,6 +1756,21 @@ public final class HttpUrlTest {
     assertThat(parse("https://xn--4pvxs.jp").topPrivateDomain()).isNull();
     assertThat(parse("https://localhost").topPrivateDomain()).isNull();
     assertThat(parse("https://127.0.0.1").topPrivateDomain()).isNull();
+
+    // https://github.com/square/okhttp/issues/6109
+    assertThat(parse("http://a./").topPrivateDomain()).isNull();
+    assertThat(parse("http://./").topPrivateDomain()).isNull();
+
+    assertThat(parse("http://squareup.com./").topPrivateDomain()).isEqualTo("squareup.com");
+  }
+
+  @Test
+  public void unparseableTopPrivateDomain() {
+    assertInvalid("http://a../", "Invalid URL host: \"a..\"");
+    assertInvalid("http://..a/", "Invalid URL host: \"..a\"");
+    assertInvalid("http://a..b/", "Invalid URL host: \"a..b\"");
+    assertInvalid("http://.a/", "Invalid URL host: \".a\"");
+    assertInvalid("http://../", "Invalid URL host: \"..\"");
   }
 
   private void assertInvalid(String string, String exceptionMessage) {

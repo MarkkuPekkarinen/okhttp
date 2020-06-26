@@ -91,7 +91,7 @@ Security.insertProviderAt(Conscrypt.newProvider(), 1);
 
 The OkHttp 3.12.x branch supports Android 2.3+ (API level 9+) and Java 7+. These platforms lack
 support for TLS 1.2 and should not be used. But because upgrading is difficult we will backport
-critical fixes to the [3.12.x branch][okhttp_312x] through December 31, 2020.
+critical fixes to the [3.12.x branch][okhttp_312x] through December 31, 2021.
 
 
 Releases
@@ -99,10 +99,10 @@ Releases
 
 Our [change log][changelog] has release history.
 
-The latest release is available on [Maven Central](https://search.maven.org/artifact/com.squareup.okhttp3/okhttp/4.3.0/jar).
+The latest release is available on [Maven Central](https://search.maven.org/artifact/com.squareup.okhttp3/okhttp/4.7.2/jar).
 
 ```kotlin
-implementation("com.squareup.okhttp3:okhttp:4.3.0")
+implementation("com.squareup.okhttp3:okhttp:4.7.2")
 ```
 
 Snapshot builds are [available][snap]. [R8 and ProGuard][r8_proguard] rules are available.
@@ -113,10 +113,10 @@ MockWebServer
 
 OkHttp includes a library for testing HTTP, HTTPS, and HTTP/2 clients.
 
-The latest release is available on [Maven Central](https://search.maven.org/artifact/com.squareup.okhttp3/mockwebserver/4.3.0/jar).
+The latest release is available on [Maven Central](https://search.maven.org/artifact/com.squareup.okhttp3/mockwebserver/4.7.2/jar).
 
 ```kotlin
-testImplementation("com.squareup.okhttp3:mockwebserver:4.3.0")
+testImplementation("com.squareup.okhttp3:mockwebserver:4.7.2")
 ```
 
 License

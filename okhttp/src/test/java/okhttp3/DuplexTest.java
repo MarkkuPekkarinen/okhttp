@@ -63,6 +63,7 @@ public final class DuplexTest {
   @Before public void setUp() {
     platform.assumeNotOpenJSSE();
     platform.assumeHttp2Support();
+    platform.assumeNotBouncyCastle();
   }
 
   @Test public void http1DoesntSupportDuplex() throws IOException {
@@ -192,6 +193,8 @@ public final class DuplexTest {
   }
 
   @Test public void serverReadsHeadersData() throws Exception {
+    TestUtil.assumeNotWindows();
+
     enableProtocol(Protocol.HTTP_2);
     MockDuplexResponseBody mockDuplexResponseBody = enqueueResponseWithBody(
         new MockResponse()

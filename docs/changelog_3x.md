@@ -1,6 +1,38 @@
 OkHttp 3.x Change Log
 =====================
 
+## Version 3.14.9
+
+_2020-05-17_
+
+ *  Fix: Don't crash when running as a plugin in Android Studio Canary 4.1. To enable
+    platform-specific TLS features OkHttp must detect whether it's running in a JVM or in Android.
+    The upcoming Android Studio runs in a JVM but has classes from Android and that confused OkHttp!
+
+
+## Version 3.14.8
+
+_2020-04-28_
+
+ *  Fix: Don't crash on Java 8u252 which introduces an API previously found only on Java 9 and
+    above. See [Jetty's overview][jetty_8_252] of the API change and its consequences.
+
+## Version 3.14.7
+
+_2020-02-24_
+
+ *  Fix: Don't crash on Android 11 due to use of restricted methods. This prevents a crash with the
+    exception, "Expected Android API level 21+ but was 29".
+
+
+## Version 3.14.6
+
+_2020-01-11_
+
+ *  Fix: Don't crash if the connection is closed when sending a degraded ping. This fixes a 
+    regression that was introduced in OkHttp 3.14.5.
+
+
 ## Version 3.14.5
 
 _2020-01-03_
@@ -150,7 +182,8 @@ _2019-02-04_
 
     The OkHttp 3.12.x branch will be our long-term branch for Android 2.3+ (API level 9+) and Java
     7+. These platforms lack support for TLS 1.2 and should not be used. But because upgrading is
-    difficult we will backport critical fixes to the 3.12.x branch through December 31, 2020.
+    difficult we will backport critical fixes to the 3.12.x branch through December 31, 2021. (This
+    commitment was originally through December 31, 2020; we have since extended it.)
 
  *  **TLSv1 and TLSv1.1 are no longer enabled by default.** Major web browsers are working towards
     removing these versions altogether in early 2020. If your servers aren't ready yet you can
@@ -183,6 +216,47 @@ _2019-02-04_
  *  New: API to access headers as `java.time.Instant`.
  *  New: Fail fast if a `SSLSocketFactory` is used as a `SocketFactory`.
  *  New: Log the TLS handshake in `LoggingEventListener`.
+
+
+## Version 3.12.12
+
+_2020-05-17_
+
+ *  Fix: Don't crash when running as a plugin in Android Studio Canary 4.1. To enable
+    platform-specific TLS features OkHttp must detect whether it's running in a JVM or in Android.
+    The upcoming Android Studio runs in a JVM but has classes from Android and that confused OkHttp!
+
+
+## Version 3.12.11
+
+_2020-04-28_
+
+ *  Fix: Don't crash on Java 8u252 which introduces an API previously found only on Java 9 and
+    above. See [Jetty's overview][jetty_8_252] of the API change and its consequences.
+
+
+## Version 3.12.10
+
+_2020-02-29_
+
+ *  Fix: Don't crash on Android 4.1 when detecting methods that became restricted in Android 11.
+    Supporting a full decade of Android releases on our 3.12.x branch is tricky!
+
+
+## Version 3.12.9
+
+_2020-02-24_
+
+ *  Fix: Don't crash on Android 11 due to use of restricted methods. This prevents a crash with the
+    exception, "Expected Android API level 21+ but was 29".
+
+
+## Version 3.12.8
+
+_2020-01-11_
+
+ *  Fix: Don't crash if the connection is closed when sending a degraded ping. This fixes a 
+    regression that was introduced in OkHttp 3.12.7.
 
 
 ## Version 3.12.7
@@ -1036,6 +1110,7 @@ stuck on the old version.
  [conscrypt_dependency]: https://github.com/google/conscrypt/#download
  [grpc_http2]: https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md
  [https_server_sample]: https://github.com/square/okhttp/blob/master/samples/guide/src/main/java/okhttp3/recipes/HttpsServer.java
+ [jetty_8_252]: https://webtide.com/jetty-alpn-java-8u252/
  [junit_5_rules]: https://junit.org/junit5/docs/current/user-guide/#migrating-from-junit4-rulesupport
  [major_versions]: https://jakewharton.com/java-interoperability-policy-for-major-version-updates/
  [maven_provided]: https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html

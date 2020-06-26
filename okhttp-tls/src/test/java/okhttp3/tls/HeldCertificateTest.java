@@ -24,8 +24,11 @@ import java.security.cert.X509Certificate;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.concurrent.TimeUnit;
+
+import okhttp3.testing.PlatformRule;
 import okio.ByteString;
 import org.bouncycastle.asn1.x509.GeneralName;
+import org.junit.Rule;
 import org.junit.Test;
 
 import static java.util.Arrays.asList;
@@ -34,6 +37,9 @@ import static org.assertj.core.data.Offset.offset;
 import static org.junit.Assert.fail;
 
 public final class HeldCertificateTest {
+  @Rule
+  public PlatformRule platform = new PlatformRule();
+
   @Test public void defaultCertificate() throws CertificateParsingException {
     long now = System.currentTimeMillis();
     HeldCertificate heldCertificate = new HeldCertificate.Builder().build();
@@ -250,10 +256,21 @@ public final class HeldCertificateTest {
         + "MEECAQAwEwYHKoZIzj0CAQYIKoZIzj0DAQcEJzAlAgEBBCA7ODT0xhGSNn4ESj6J\n"
         + "lu/GJQZoU9lDrCPeUcQ28tzOWw==\n"
         + "-----END PRIVATE KEY-----\n";
+    String bcPkcs8Pem = ""
+        + "-----BEGIN PRIVATE KEY-----\n"
+        + "ME0CAQAwEwYHKoZIzj0CAQYIKoZIzj0DAQcEMzAxAgEBBCA7ODT0xhGSNn4ESj6J\n"
+        + "lu/GJQZoU9lDrCPeUcQ28tzOW6AKBggqhkjOPQMBBw==\n"
+        + "-----END PRIVATE KEY-----\n";
 
     HeldCertificate heldCertificate = HeldCertificate.decode(certificatePem + pkcs8Pem);
     assertThat(heldCertificate.certificatePem()).isEqualTo(certificatePem);
-    assertThat(heldCertificate.privateKeyPkcs8Pem()).isEqualTo(pkcs8Pem);
+
+    // Slightly different encoding
+    if (platform.isBouncyCastle()) {
+      assertThat(heldCertificate.privateKeyPkcs8Pem()).isEqualTo(bcPkcs8Pem);
+    } else {
+      assertThat(heldCertificate.privateKeyPkcs8Pem()).isEqualTo(pkcs8Pem);
+    }
 
     X509Certificate certificate = heldCertificate.certificate();
     assertThat(certificate.getNotBefore().getTime()).isEqualTo(5_000L);
@@ -267,7 +284,7 @@ public final class HeldCertificateTest {
         .isEqualTo("CN=cash.app,OU=engineering");
   }
 
-  @Test public void decodeRsa512() throws Exception {
+  @Test public void decodeRsa512() {
     // The certificate + private key below was generated with OpenSSL. Never generate certificates
     // with MD5 or 512-bit RSA; that's insecure!
     //
@@ -462,7 +479,9 @@ public final class HeldCertificateTest {
           + "-----END PRIVATE KEY-----\n");
       fail();
     } catch (IllegalArgumentException expected) {
-      assertThat(expected).hasMessage("failed to decode certificate");
+      if (!platform.isConscrypt()) {
+        assertThat(expected).hasMessage("failed to decode certificate");
+      }
     }
     try {
       HeldCertificate.decode(""
@@ -481,7 +500,9 @@ public final class HeldCertificateTest {
           + "-----END PRIVATE KEY-----\n");
       fail();
     } catch (IllegalArgumentException expected) {
-      assertThat(expected).hasMessage("failed to decode private key");
+      if (!platform.isConscrypt()) {
+        assertThat(expected).hasMessage("failed to decode private key");
+      }
     }
   }
 }

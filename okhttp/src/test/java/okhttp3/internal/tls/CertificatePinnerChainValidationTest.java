@@ -41,6 +41,7 @@ import okhttp3.mockwebserver.SocketPolicy;
 import okhttp3.testing.PlatformRule;
 import okhttp3.tls.HandshakeCertificates;
 import okhttp3.tls.HeldCertificate;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -54,6 +55,11 @@ public final class CertificatePinnerChainValidationTest {
   @Rule public final OkHttpClientTestRule clientTestRule = new OkHttpClientTestRule();
 
   @Rule public final MockWebServer server = new MockWebServer();
+
+  @Before
+  public void setup() {
+    platform.assumeNotBouncyCastle();
+  }
 
   /** The pinner should pull the root certificate from the trust manager. */
   @Test public void pinRootNotPresentInChain() throws Exception {
@@ -349,7 +355,8 @@ public final class CertificatePinnerChainValidationTest {
     // http://hg.openjdk.java.net/jdk9/jdk9/jdk/file/2c1c21d11e58/src/share/classes/sun/security/pkcs12/PKCS12KeyStore.java#l596
     String keystoreType = platform.isJdk9() ? "JKS" : null;
     X509KeyManager x509KeyManager = newKeyManager(keystoreType, heldCertificate, intermediates);
-    X509TrustManager trustManager = newTrustManager(keystoreType, Collections.emptyList());
+    X509TrustManager trustManager = newTrustManager(
+        keystoreType, Collections.emptyList(), Collections.emptyList());
     SSLContext sslContext = Platform.get().newSSLContext();
     sslContext.init(new KeyManager[] {x509KeyManager}, new TrustManager[] {trustManager},
         new SecureRandom());

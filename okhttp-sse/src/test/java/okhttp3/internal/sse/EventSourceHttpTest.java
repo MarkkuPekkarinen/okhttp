@@ -16,6 +16,7 @@
 package okhttp3.internal.sse;
 
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
 import okhttp3.OkHttpClient;
 import okhttp3.OkHttpClientTestRule;
 import okhttp3.Request;
@@ -23,6 +24,7 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.sse.EventSource;
 import okhttp3.sse.EventSources;
+import okhttp3.testing.PlatformRule;
 import org.junit.After;
 import org.junit.Rule;
 import org.junit.Test;
@@ -30,6 +32,8 @@ import org.junit.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public final class EventSourceHttpTest {
+  @Rule public final PlatformRule platform = new PlatformRule();
+
   @Rule public final MockWebServer server = new MockWebServer();
   @Rule public final OkHttpClientTestRule clientTestRule = new OkHttpClientTestRule();
 
@@ -105,9 +109,47 @@ public final class EventSourceHttpTest {
     listener.assertFailure("timeout");
   }
 
+  @Test public void retainsAccept() throws InterruptedException {
+    server.enqueue(new MockResponse().setBody(""
+        + "data: hey\n"
+        + "\n").setHeader("content-type", "text/event-stream"));
+
+    EventSource source = newEventSource("text/plain");
+
+    listener.assertOpen();
+    listener.assertEvent(null, null, "hey");
+    listener.assertClose();
+
+    assertThat(server.takeRequest().getHeader("Accept")).isEqualTo("text/plain");
+  }
+
+  @Test public void setsMissingAccept() throws InterruptedException {
+    server.enqueue(new MockResponse().setBody(""
+        + "data: hey\n"
+        + "\n").setHeader("content-type", "text/event-stream"));
+
+    EventSource source = newEventSource();
+
+    listener.assertOpen();
+    listener.assertEvent(null, null, "hey");
+    listener.assertClose();
+
+    assertThat(server.takeRequest().getHeader("Accept")).isEqualTo("text/event-stream");
+  }
+
   private EventSource newEventSource() {
-    Request request = new Request.Builder()
-        .url(server.url("/"))
+    return newEventSource(null);
+  }
+
+  private EventSource newEventSource(@Nullable String accept) {
+    Request.Builder builder = new Request.Builder()
+        .url(server.url("/"));
+
+    if (accept != null) {
+      builder.header("Accept", accept);
+    }
+
+    Request request = builder
         .build();
     EventSource.Factory factory = EventSources.createFactory(client);
     return factory.newEventSource(request, listener);

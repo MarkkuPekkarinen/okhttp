@@ -15,31 +15,48 @@
  */
 package okhttp3
 
+import java.io.IOException
+import java.net.Proxy
+import java.security.cert.X509Certificate
+import java.time.Duration
+import java.util.concurrent.TimeUnit
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.internal.connection.RealConnection
+import okhttp3.internal.connection.RealConnection.Companion.IDLE_CONNECTION_HEALTHY_NS
+import okhttp3.internal.http.RecordingProxySelector
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
+import okhttp3.testing.Flaky
 import okhttp3.testing.PlatformRule
 import okhttp3.tls.internal.TlsUtil.localhost
 import okio.BufferedSink
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.fail
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
 import org.junit.rules.Timeout
-import java.io.IOException
-import java.security.cert.X509Certificate
-import java.util.concurrent.TimeUnit
 
 class CallKotlinTest {
   @JvmField @Rule val platform = PlatformRule()
   @JvmField @Rule val timeout: TestRule = Timeout(30_000, TimeUnit.MILLISECONDS)
   @JvmField @Rule val server = MockWebServer()
-  @JvmField @Rule val clientTestRule = OkHttpClientTestRule()
+  @JvmField @Rule val clientTestRule = OkHttpClientTestRule().apply {
+    recordFrames = true
+    recordSslDebug = true
+  }
 
   private var client = clientTestRule.newClient()
   private val handshakeCertificates = localhost()
+
+  @Before
+  fun setup() {
+    platform.assumeNotBouncyCastle()
+  }
 
   @Test
   fun legalToExecuteTwiceCloning() {
@@ -61,6 +78,7 @@ class CallKotlinTest {
   }
 
   @Test
+  @Flaky
   fun testMockWebserverRequest() {
     enableTls()
 
@@ -167,5 +185,68 @@ class CallKotlinTest {
 
     recordedRequest = server.takeRequest()
     assertEquals("HEAD", recordedRequest.method)
+  }
+
+  @Test
+  fun staleConnectionNotReusedForNonIdempotentRequest() {
+    // Capture the connection so that we can later make it stale.
+    var connection: RealConnection? = null
+    client = client.newBuilder()
+        .addNetworkInterceptor(object : Interceptor {
+          override fun intercept(chain: Interceptor.Chain): Response {
+            connection = chain.connection() as RealConnection
+            return chain.proceed(chain.request())
+          }
+        })
+        .build()
+
+    server.enqueue(MockResponse().setBody("a")
+        .setSocketPolicy(SocketPolicy.SHUTDOWN_OUTPUT_AT_END))
+    server.enqueue(MockResponse().setBody("b"))
+
+    val requestA = Request.Builder()
+        .url(server.url("/"))
+        .build()
+    val responseA = client.newCall(requestA).execute()
+
+    assertThat(responseA.body!!.string()).isEqualTo("a")
+    assertThat(server.takeRequest().sequenceNumber).isEqualTo(0)
+
+    // Give the socket a chance to become stale.
+    connection!!.idleAtNs -= IDLE_CONNECTION_HEALTHY_NS
+    Thread.sleep(250)
+
+    val requestB = Request.Builder()
+        .url(server.url("/"))
+        .post("b".toRequestBody("text/plain".toMediaType()))
+        .build()
+    val responseB = client.newCall(requestB).execute()
+    assertThat(responseB.body!!.string()).isEqualTo("b")
+    assertThat(server.takeRequest().sequenceNumber).isEqualTo(0)
+  }
+
+  @Test fun exceptionsAreReturnedAsSuppressed() {
+    val proxySelector = RecordingProxySelector()
+    proxySelector.proxies.add(Proxy(Proxy.Type.HTTP, TestUtil.UNREACHABLE_ADDRESS))
+    proxySelector.proxies.add(Proxy.NO_PROXY)
+
+    server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
+
+    client = client.newBuilder()
+        .proxySelector(proxySelector)
+        .readTimeout(Duration.ofMillis(100))
+        .connectTimeout(Duration.ofMillis(100))
+        .build()
+
+    val request = Request.Builder().url(server.url("/")).build()
+    try {
+      client.newCall(request).execute()
+      fail()
+    } catch (expected: IOException) {
+      assertThat(expected.suppressed).hasSize(1)
+      val suppressed = expected.suppressed[0]
+      assertThat(suppressed).isInstanceOf(IOException::class.java)
+      assertThat(suppressed).isNotSameAs(expected)
+    }
   }
 }

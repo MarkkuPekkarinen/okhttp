@@ -1,6 +1,233 @@
 Change Log
 ==========
 
+## Version 4.7.2
+
+_2020-05-20_
+
+ *  Fix: Don't crash inspecting whether the host platform is JVM or Android. With 4.7.0 and 4.7.1 we
+    had a crash `IllegalArgumentException: Not a Conscrypt trust manager` because we depended on
+    initialization order of companion objects.
+
+
+## Version 4.7.1
+
+_2020-05-18_
+
+ *  Fix: Pass the right arguments in the trust manager created for `addInsecureHost()`. Without the
+    fix insecure hosts crash with an `IllegalArgumentException` on Android.
+
+
+## Version 4.7.0
+
+_2020-05-17_
+
+ *  New: `HandshakeCertificates.Builder.addInsecureHost()` makes it easy to turn off security in
+    private development environments that only carry test data. Prefer this over creating an
+    all-trusting `TrustManager` because only hosts on the allowlist are insecure. From
+    [our DevServer sample][dev_server]:
+
+    ```kotlin
+    val clientCertificates = HandshakeCertificates.Builder()
+        .addPlatformTrustedCertificates()
+        .addInsecureHost("localhost")
+        .build()
+
+    val client = OkHttpClient.Builder()
+        .sslSocketFactory(clientCertificates.sslSocketFactory(), clientCertificates.trustManager)
+        .build()
+    ```
+
+ *  New: Add `cacheHit`, `cacheMiss`, and `cacheConditionalHit()` events to `EventListener`. Use
+    these in logs, metrics, and even test cases to confirm your cache headers are configured as
+    expected.
+
+ *  New: Constant string `okhttp3.VERSION`. This is a string like "4.5.0-RC1", "4.5.0", or
+    "4.6.0-SNAPSHOT" indicating the version of OkHttp in the current runtime. Use this to include
+    the OkHttp version in custom `User-Agent` headers.
+
+ *  Fix: Don't crash when running as a plugin in Android Studio Canary 4.1. To enable
+    platform-specific TLS features OkHttp must detect whether it's running in a JVM or in Android.
+    The upcoming Android Studio runs in a JVM but has classes from Android and that confused OkHttp!
+
+ *  Fix: Include the header `Accept: text/event-stream` for SSE calls. This header is not added if
+    the request already contains an `Accept` header.
+
+ *  Fix: Don't crash with a `NullPointerException` if a server sends a close while we're sending a
+    ping. OkHttp had a race condition bug.
+
+
+## Version 4.6.0
+
+_2020-04-28_
+
+ *  Fix: Follow HTTP 307 and 308 redirects on methods other than GET and POST. We're reluctant to
+    change OkHttp's behavior in handling common HTTP status codes, but this fix is overdue! The new
+    behavior is now consistent with [RFC 7231][rfc_7231_647], which is newer than OkHttp itself.
+    If you want this update with the old behavior use [this interceptor][legacy_interceptor].
+
+ *  Fix: Don't crash decompressing web sockets messages. We had a bug where we assumed deflated
+    bytes in would always yield deflated bytes out and this isn't always the case!
+
+ *  Fix: Reliably update and invalidate the disk cache on windows. As originally designed our
+    internal `DiskLruCache` assumes an inode-like file system, where it's fine to delete files that
+    are currently being read or written. On Windows the file system forbids this so we must be more
+    careful when deleting and renaming files.
+
+ *  Fix: Don't crash on Java 8u252 which introduces an API previously found only on Java 9 and
+    above. See [Jetty's overview][jetty_8_252] of the API change and its consequences.
+
+ *  New: `MultipartReader` is a streaming decoder for [MIME multipart (RFC 2045)][rfc_2045]
+    messages. It complements `MultipartBody` which is our streaming encoder.
+
+    ```kotlin
+    val response: Response = call.execute()
+    val multipartReader = MultipartReader(response.body!!)
+
+    multipartReader.use {
+      while (true) {
+        val part = multipartReader.nextPart() ?: break
+        process(part.headers, part.body)
+      }
+    }
+    ```
+
+ *  New: `MediaType.parameter()` gets a parameter like `boundary` from a media type like
+    `multipart/mixed; boundary="abc"`.
+
+ *  New: `Authenticator.JAVA_NET_AUTHENTICATOR` forwards authentication requests to
+    `java.net.Authenticator`. This obsoletes `JavaNetAuthenticator` in the `okhttp-urlconnection`
+    module.
+
+ *  New: `CertificatePinner` now offers an API for inspecting the configured pins.
+
+ *  Upgrade: [Okio 2.6.0][okio_2_6_0].
+
+    ```kotlin
+    implementation("com.squareup.okio:okio:2.6.0")
+    ```
+
+ *  Upgrade: [publicsuffix.org data][public_suffix]. This powers `HttpUrl.topPrivateDomain()`.
+    It's also how OkHttp knows which domains can share cookies with one another.
+
+ *  Upgrade: [Bouncy Castle 1.65][bouncy_castle_releases]. This dependency is required by the
+    `okhttp-tls` module.
+
+ *  Upgrade: [Kotlin 1.3.71][kotlin_1_3_71].
+
+
+## Version 4.5.0
+
+_2020-04-06_
+
+**This release fixes a severe bug where OkHttp incorrectly detected and recovered from unhealthy
+connections.** Stale or canceled connections were incorrectly attempted when they shouldn't have
+been, leading to rare cases of infinite retries. Please upgrade to this release!
+
+ *  Fix: don't return stale DNS entries in `DnsOverHttps`. We were caching DNS results indefinitely
+    rather than the duration specified in the response's cache-control header.
+ *  Fix: Verify certificate IP addresses in canonical form. When a server presents a TLS certificate
+    containing an IP address we must match that address against the URL's IP address, even when the
+    two addresses are encoded differently, such as `192.168.1.1` and `0::0:0:FFFF:C0A8:101`. Note
+    that OkHttp incorrectly rejected valid certificates resulting in a failure to connect; at no
+    point were invalid certificates accepted.
+ *  New: `OkHttpClient.Builder.minWebSocketMessageToCompress()` configures a threshold for
+    compressing outbound web socket messages. Configure this with 0L to always compress outbound
+    messages and `Long.MAX_VALUE` to never compress outbound messages. The default is 1024L which
+    compresses messages of size 1 KiB and larger. (Inbound messages are compressed or not based on
+    the web socket server's configuration.)
+ *  New: Defer constructing `Inflater` and `Deflater` instances until they are needed. This saves
+    memory if web socket compression is negotiated but not used.
+
+
+## Version 4.5.0-RC1
+
+_2020-03-17_
+
+**This release candidate turns on web socket compression.**
+
+The [spec][rfc_7692] includes a sophisticated mechanism for client and server to negotiate
+compression features. We strive to offer great performance in our default configuration and so we're
+making compression the default for everyone starting with this release candidate.
+
+Please be considerate of your servers and their operators as you roll out this release. Compression
+saves bandwidth but it costs CPU and memory! If you run into a problem you may need to adjust or
+disable the `permessage-deflate` compression settings on your server.
+
+Note that OkHttp won't use compression when sending messages smaller than 1 KiB.
+
+ *  Fix: Don't crash when the URL hostname contains an underscore on Android.
+ *  Fix: Change HTTP/2 to use a daemon thread for its socket reader. If you've ever seen a command
+    line application hang after all of the work is done, it may be due to a non-daemon thread like
+    this one.
+ *  New: Include suppressed exceptions when all routes to a target service fail.
+
+
+## Version 4.4.1
+
+_2020-03-08_
+
+ *  Fix: Don't reuse a connection on redirect if certs match but DNS does not. For better
+    locality and performance OkHttp attempts to use the same pooled connection across redirects and
+    follow-ups. It independently shares connections when the IP addresses and certificates match,
+    even if the host names do not. In 4.4.0 we introduced a regression where we shared a connection
+    when certificates matched but the DNS addresses did not. This would only occur when following a
+    redirect from one hostname to another, and where both hosts had common certificates.
+
+ *  Fix: Don't fail on a redirect when a client has configured a 'trust everything' trust manager.
+    Typically this would cause certain redirects to fail in debug and development configurations.
+
+
+## Version 4.4.0
+
+_2020-02-17_
+
+ *  New: Support `canceled()` as an event that can be observed by `EventListener`. This should be
+    useful for splitting out canceled calls in metrics.
+
+ *  New: Publish a [bill of materials (BOM)][bom] for OkHttp. Depend on this from Gradle or Maven to
+    keep all of your OkHttp artifacts on the same version, even if they're declared via transitive
+    dependencies. You can even omit versions when declaring other OkHttp dependencies.
+
+    ```kotlin
+    dependencies {
+       api(platform("com.squareup.okhttp3:okhttp-bom:4.4.0"))
+       api("com.squareup.okhttp3:okhttp")              // No version!
+       api("com.squareup.okhttp3:logging-interceptor") // No version!
+    }
+    ```
+
+ *  New: Upgrade to Okio 2.4.3.
+
+    ```kotlin
+    implementation("com.squareup.okio:okio:2.4.3")
+    ```
+
+ *  Fix: Limit retry attempts for HTTP/2 `REFUSED_STREAM` and `CANCEL` failures.
+ *  Fix: Retry automatically when incorrectly sharing a connection among multiple hostnames. OkHttp
+    shares connections when hosts share both IP addresses and certificates, such as `squareup.com`
+    and `www.squareup.com`. If a server refuses such sharing it will return HTTP 421 and OkHttp will
+    automatically retry on an unshared connection.
+ *  Fix: Don't crash if a TLS tunnel's response body is truncated.
+ *  Fix: Don't track unusable routes beyond their usefulness. We had a bug where we could track
+    certain bad routes indefinitely; now we only track the ones that could be necessary.
+ *  Fix: Defer proxy selection until a proxy is required. This saves calls to `ProxySelector` on
+    calls that use a pooled connection.
+
+
+## Version 4.3.1
+
+_2020-01-07_
+
+ *  Fix: Don't crash with a `NullPointerException` when a web socket is closed before it connects.
+    This regression was introduced in OkHttp 4.3.0.
+ *  Fix: Don't crash with an `IllegalArgumentException` when using custom trust managers on 
+    Android 10. Android uses reflection to look up a magic `checkServerTrusted()` method and we 
+    didn't have it.
+ *  Fix: Explicitly specify the remote server name when making HTTPS connections on Android 5. In
+    4.3.0 we introduced a regression where server name indication (SNI) was broken on Android 5.
+
+
 ## Version 4.3.0
 
 _2019-12-31_
@@ -203,6 +430,18 @@ _2019-06-03_
 [Change log](http://square.github.io/okhttp/changelog_3x/)
 
 
+ [bom]: https://docs.gradle.org/6.2/userguide/platforms.html#sub:bom_import
+ [bouncy_castle_releases]: https://www.bouncycastle.org/releasenotes.html
+ [dev_server]: https://github.com/square/okhttp/blob/482f88300f78c3419b04379fc26c3683c10d6a9d/samples/guide/src/main/java/okhttp3/recipes/kt/DevServer.kt
  [iana_websocket]: https://www.iana.org/assignments/websocket/websocket.txt
+ [jetty_8_252]: https://webtide.com/jetty-alpn-java-8u252/
+ [kotlin_1_3_71]: https://github.com/JetBrains/kotlin/releases/tag/v1.3.71
+ [legacy_interceptor]: https://gist.github.com/swankjesse/80135f4e03629527e723ab3bcf64be0b
  [okhttp4_blog_post]: https://cashapp.github.io/2019-06-26/okhttp-4-goes-kotlin
+ [okio_2_6_0]: https://square.github.io/okio/changelog/#version-260
+ [public_suffix]: https://publicsuffix.org/
  [upgrading_to_okhttp_4]: https://square.github.io/okhttp/upgrading_to_okhttp_4/
+ [rfc_2045]: https://tools.ietf.org/html/rfc2045
+ [rfc_7231_647]: https://tools.ietf.org/html/rfc7231#section-6.4.7
+ [rfc_7692]: https://tools.ietf.org/html/rfc7692
+ [semver]: https://semver.org/

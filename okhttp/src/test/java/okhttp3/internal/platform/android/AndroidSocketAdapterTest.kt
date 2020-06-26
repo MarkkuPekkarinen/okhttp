@@ -15,6 +15,9 @@
  */
 package okhttp3.internal.platform.android
 
+import java.security.Provider
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 import okhttp3.DelegatingSSLSocket
 import okhttp3.DelegatingSSLSocketFactory
 import okhttp3.Protocol.HTTP_1_1
@@ -31,9 +34,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
-import java.security.Provider
-import javax.net.ssl.SSLContext
-import javax.net.ssl.SSLSocket
 
 @RunWith(Parameterized::class)
 class AndroidSocketAdapterTest(private val adapter: SocketAdapter) {
@@ -57,7 +57,7 @@ class AndroidSocketAdapterTest(private val adapter: SocketAdapter) {
     val sslSocket = socketFactory.createSocket() as SSLSocket
     assertTrue(adapter.matchesSocket(sslSocket))
 
-    adapter.configureTlsExtensions(sslSocket, listOf(HTTP_2, HTTP_1_1))
+    adapter.configureTlsExtensions(sslSocket, null, listOf(HTTP_2, HTTP_1_1))
     // not connected
     assertNull(adapter.getSelectedProtocol(sslSocket))
   }
@@ -88,7 +88,7 @@ class AndroidSocketAdapterTest(private val adapter: SocketAdapter) {
         object : DelegatingSSLSocket(context.socketFactory.createSocket() as SSLSocket) {}
     assertFalse(adapter.matchesSocket(sslSocket))
 
-    adapter.configureTlsExtensions(sslSocket, listOf(HTTP_2, HTTP_1_1))
+    adapter.configureTlsExtensions(sslSocket, null, listOf(HTTP_2, HTTP_1_1))
     // not connected
     assertNull(adapter.getSelectedProtocol(sslSocket))
   }
@@ -98,9 +98,8 @@ class AndroidSocketAdapterTest(private val adapter: SocketAdapter) {
     @Parameterized.Parameters(name = "{0}")
     fun data(): Collection<SocketAdapter> {
       return listOfNotNull(
-          ConscryptSocketAdapter.buildIfSupported(),
-          DeferredSocketAdapter("org.conscrypt"),
-          AndroidSocketAdapter.buildIfSupported("org.conscrypt"),
+          DeferredSocketAdapter(ConscryptSocketAdapter.factory),
+          DeferredSocketAdapter(AndroidSocketAdapter.factory("org.conscrypt")),
           StandardAndroidSocketAdapter.buildIfSupported("org.conscrypt")
       )
     }

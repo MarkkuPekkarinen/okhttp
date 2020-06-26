@@ -17,9 +17,13 @@ package okhttp3.logging;
 
 import java.io.IOException;
 import java.net.UnknownHostException;
+import okhttp3.Call;
+import okhttp3.EventListener;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.TestUtil;
 import okhttp3.testing.PlatformRule;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -67,6 +71,8 @@ public final class LoggingEventListenerTest {
 
   @Test
   public void get() throws Exception {
+    TestUtil.assumeNotWindows();
+
     server.enqueue(new MockResponse().setBody("Hello!").setHeader("Content-Type", PLAIN));
     Response response = client.newCall(request().build()).execute();
     assertThat(response.body()).isNotNull();
@@ -102,6 +108,8 @@ public final class LoggingEventListenerTest {
 
   @Test
   public void post() throws IOException {
+    TestUtil.assumeNotWindows();
+
     server.enqueue(new MockResponse());
     client.newCall(request().post(RequestBody.create("Hello!", PLAIN)).build()).execute();
 
@@ -137,6 +145,9 @@ public final class LoggingEventListenerTest {
 
   @Test
   public void secureGet() throws Exception {
+    TestUtil.assumeNotWindows();
+    platform.assumeNotBouncyCastle();
+
     server.useHttps(handshakeCertificates.sslSocketFactory(), false);
     url = server.url("/");
 
@@ -203,6 +214,9 @@ public final class LoggingEventListenerTest {
 
   @Test
   public void connectFail() {
+    TestUtil.assumeNotWindows();
+    platform.assumeNotBouncyCastle();
+
     server.useHttps(handshakeCertificates.sslSocketFactory(), false);
     server.setProtocols(asList(HTTP_2, HTTP_1_1));
     server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.FAIL_HANDSHAKE));
@@ -223,9 +237,30 @@ public final class LoggingEventListenerTest {
         .assertLogMatch("connectStart: " + url.host() + "/.+ DIRECT")
         .assertLogMatch("secureConnectStart")
         .assertLogMatch(
-            "connectFailed: null javax\\.net\\.ssl\\.(?:SSLProtocolException|SSLHandshakeException): (?:Unexpected handshake message: client_hello|Handshake message sequence violation, 1|Read error).*")
+            "connectFailed: null javax\\.net\\.ssl\\.(?:SSLProtocolException|SSLHandshakeException): (?:Unexpected handshake message: client_hello|Handshake message sequence violation, 1|Read error|Handshake failed).*")
         .assertLogMatch(
-            "callFailed: javax\\.net\\.ssl\\.(?:SSLProtocolException|SSLHandshakeException): (?:Unexpected handshake message: client_hello|Handshake message sequence violation, 1|Read error).*")
+            "callFailed: javax\\.net\\.ssl\\.(?:SSLProtocolException|SSLHandshakeException): (?:Unexpected handshake message: client_hello|Handshake message sequence violation, 1|Read error|Handshake failed).*")
+        .assertNoMoreLogs();
+  }
+
+  @Test
+  public void testCacheEvents() {
+    Request request = new Request.Builder().url(url).build();
+    Call call = client.newCall(request);
+    Response response = new Response.Builder().request(request).code(200).message("").protocol(HTTP_2).build();
+
+    EventListener listener = loggingEventListenerFactory.create(call);
+
+    listener.cacheConditionalHit(call, response);
+    listener.cacheHit(call, response);
+    listener.cacheMiss(call);
+    listener.satisfactionFailure(call, response);
+
+    logRecorder
+        .assertLogMatch("cacheConditionalHit: Response\\{protocol=h2, code=200, message=, url=" + url + "}")
+        .assertLogMatch("cacheHit: Response\\{protocol=h2, code=200, message=, url=" + url + "}")
+        .assertLogMatch("cacheMiss")
+        .assertLogMatch("satisfactionFailure: Response\\{protocol=h2, code=200, message=, url=" + url + "}")
         .assertNoMoreLogs();
   }
 
