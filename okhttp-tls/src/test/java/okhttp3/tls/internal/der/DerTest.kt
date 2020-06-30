@@ -22,6 +22,10 @@ import java.util.Date
 import java.util.TimeZone
 import okhttp3.tls.internal.der.CertificateAdapters.generalNameDnsName
 import okhttp3.tls.internal.der.CertificateAdapters.generalNameIpAddress
+import okhttp3.tls.internal.der.ObjectIdentifiers.basicConstraints
+import okhttp3.tls.internal.der.ObjectIdentifiers.commonName
+import okhttp3.tls.internal.der.ObjectIdentifiers.sha256WithRSAEncryption
+import okhttp3.tls.internal.der.ObjectIdentifiers.subjectAlternativeName
 import okio.Buffer
 import okio.ByteString.Companion.decodeHex
 import okio.ByteString.Companion.encodeUtf8
@@ -38,12 +42,12 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
-      assertThat(tag).isEqualTo(30)
-      assertThat(constructed).isFalse()
-      assertThat(length).isEqualTo(201)
-    })
+    derReader.read("test") { header ->
+      assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
+      assertThat(header.tag).isEqualTo(30)
+      assertThat(header.constructed).isFalse()
+      assertThat(header.length).isEqualTo(201)
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -52,8 +56,8 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(tagClass = DerHeader.TAG_CLASS_UNIVERSAL, tag = 30L) {
-      it.writeUtf8("a".repeat(201))
+    derWriter.write("test", tagClass = DerHeader.TAG_CLASS_UNIVERSAL, tag = 30L) {
+      derWriter.writeUtf8("a".repeat(201))
     }
 
     assertThat(buffer.readByteString(3)).isEqualTo("1e81c9".decodeHex())
@@ -66,10 +70,10 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(3L)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(3L)
       assertThat(derReader.readBitString()).isEqualTo(BitString("0A3B5F291CD0".decodeHex(), 4))
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -78,7 +82,7 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(tagClass = DerHeader.TAG_CLASS_UNIVERSAL, tag = 3L) {
+    derWriter.write("test", tagClass = DerHeader.TAG_CLASS_UNIVERSAL, tag = 3L) {
       derWriter.writeBitString(BitString("0A3B5F291CD0".decodeHex(), 4))
     }
 
@@ -94,10 +98,10 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(3L)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(3L)
       assertThat(derReader.readBitString()).isEqualTo(BitString("0A3B5F291CD0".decodeHex(), 4))
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -108,12 +112,12 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(26L)
-      assertThat(constructed).isFalse()
-      assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(26L)
+      assertThat(header.constructed).isFalse()
+      assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
       assertThat(derReader.readOctetString()).isEqualTo("Jones".encodeUtf8())
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -122,7 +126,7 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(tagClass = DerHeader.TAG_CLASS_UNIVERSAL, tag = 26L) {
+    derWriter.write("test", tagClass = DerHeader.TAG_CLASS_UNIVERSAL, tag = 26L) {
       derWriter.writeOctetString("Jones".encodeUtf8())
     }
 
@@ -135,12 +139,12 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(26L)
-      assertThat(constructed).isTrue()
-      assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(26L)
+      assertThat(header.constructed).isTrue()
+      assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
       assertThat(derReader.readOctetString()).isEqualTo("Jones".encodeUtf8())
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -153,11 +157,11 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(3L)
-      assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_APPLICATION)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(3L)
+      assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_APPLICATION)
       assertThat(derReader.readOctetString()).isEqualTo("Jones".encodeUtf8())
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -168,7 +172,7 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(tagClass = DerHeader.TAG_CLASS_APPLICATION, tag = 3L) {
+    derWriter.write("test", tagClass = DerHeader.TAG_CLASS_APPLICATION, tag = 3L) {
       derWriter.writeOctetString("Jones".encodeUtf8())
     }
 
@@ -184,20 +188,20 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(2L)
-      assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_CONTEXT_SPECIFIC)
-      assertThat(length).isEqualTo(7L)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(2L)
+      assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_CONTEXT_SPECIFIC)
+      assertThat(header.length).isEqualTo(7L)
 
-      derReader.read(derAdapter { tagClass, tag, constructed, length ->
-        assertThat(tag).isEqualTo(3L)
-        assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_APPLICATION)
-        assertThat(length).isEqualTo(5L)
+      derReader.read("test") { header ->
+        assertThat(header.tag).isEqualTo(3L)
+        assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_APPLICATION)
+        assertThat(header.length).isEqualTo(5L)
         assertThat(derReader.readOctetString()).isEqualTo("Jones".encodeUtf8())
-      })
+      }
 
       assertThat(derReader.hasNext()).isFalse()
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -209,8 +213,8 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(tagClass = DerHeader.TAG_CLASS_CONTEXT_SPECIFIC, tag = 2L) {
-      derWriter.value(tagClass = DerHeader.TAG_CLASS_APPLICATION, tag = 3L) {
+    derWriter.write("test", tagClass = DerHeader.TAG_CLASS_CONTEXT_SPECIFIC, tag = 2L) {
+      derWriter.write("test", tagClass = DerHeader.TAG_CLASS_APPLICATION, tag = 3L) {
         derWriter.writeOctetString("Jones".encodeUtf8())
       }
     }
@@ -228,20 +232,20 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(7L)
-      assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_APPLICATION)
-      assertThat(length).isEqualTo(7L)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(7L)
+      assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_APPLICATION)
+      assertThat(header.length).isEqualTo(7L)
 
-      derReader.read(derAdapter { tagClass, tag, constructed, length ->
-        assertThat(tag).isEqualTo(3L)
-        assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_APPLICATION)
-        assertThat(length).isEqualTo(5L)
+      derReader.read("test") { header2 ->
+        assertThat(header2.tag).isEqualTo(3L)
+        assertThat(header2.tagClass).isEqualTo(DerHeader.TAG_CLASS_APPLICATION)
+        assertThat(header2.length).isEqualTo(5L)
         assertThat(derReader.readOctetString()).isEqualTo("Jones".encodeUtf8())
-      })
+      }
 
       assertThat(derReader.hasNext()).isFalse()
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -254,8 +258,8 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(tagClass = DerHeader.TAG_CLASS_APPLICATION, tag = 7L) {
-      derWriter.value(tagClass = DerHeader.TAG_CLASS_APPLICATION, tag = 3L) {
+    derWriter.write("test", tagClass = DerHeader.TAG_CLASS_APPLICATION, tag = 7L) {
+      derWriter.write("test", tagClass = DerHeader.TAG_CLASS_APPLICATION, tag = 3L) {
         derWriter.writeOctetString("Jones".encodeUtf8())
       }
     }
@@ -272,12 +276,12 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(2L)
-      assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_CONTEXT_SPECIFIC)
-      assertThat(length).isEqualTo(5L)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(2L)
+      assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_CONTEXT_SPECIFIC)
+      assertThat(header.length).isEqualTo(5L)
       assertThat(derReader.readOctetString()).isEqualTo("Jones".encodeUtf8())
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -289,7 +293,8 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(
+    derWriter.write(
+        name = "test",
         tagClass = DerHeader.TAG_CLASS_CONTEXT_SPECIFIC,
         tag = 2L
     ) {
@@ -305,12 +310,12 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(6L)
-      assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
-      assertThat(length).isEqualTo(3L)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(6L)
+      assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
+      assertThat(header.length).isEqualTo(3L)
       assertThat(derReader.readObjectIdentifier()).isEqualTo("2.999.3")
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -319,7 +324,8 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(
+    derWriter.write(
+        name = "test",
         tagClass = DerHeader.TAG_CLASS_UNIVERSAL,
         tag = 6L
     ) {
@@ -335,12 +341,12 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(13L)
-      assertThat(tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
-      assertThat(length).isEqualTo(4L)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(13L)
+      assertThat(header.tagClass).isEqualTo(DerHeader.TAG_CLASS_UNIVERSAL)
+      assertThat(header.length).isEqualTo(4L)
       assertThat(derReader.readRelativeObjectIdentifier()).isEqualTo("8571.3.2")
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -349,7 +355,8 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(
+    derWriter.write(
+        name = "test",
         tagClass = DerHeader.TAG_CLASS_UNIVERSAL,
         tag = 13L
     ) {
@@ -370,21 +377,21 @@ internal class DerTest {
 
     val derReader = DerReader(buffer)
 
-    derReader.read(derAdapter { tagClass, tag, constructed, length ->
-      assertThat(tag).isEqualTo(16L)
+    derReader.read("test") { header ->
+      assertThat(header.tag).isEqualTo(16L)
 
-      derReader.read(derAdapter { tagClass, tag, constructed, length ->
-        assertThat(tag).isEqualTo(21L)
+      derReader.read("test") { header2 ->
+        assertThat(header2.tag).isEqualTo(21L)
         assertThat(derReader.readOctetString()).isEqualTo("Smith".encodeUtf8())
-      })
+      }
 
-      derReader.read(derAdapter { tagClass, tag, constructed, length ->
-        assertThat(tag).isEqualTo(1L)
+      derReader.read("test") { header3 ->
+        assertThat(header3.tag).isEqualTo(1L)
         assertThat(derReader.readBoolean()).isTrue()
-      })
+      }
 
       assertThat(derReader.hasNext()).isFalse()
-    })
+    }
 
     assertThat(derReader.hasNext()).isFalse()
   }
@@ -393,19 +400,22 @@ internal class DerTest {
     val buffer = Buffer()
     val derWriter = DerWriter(buffer)
 
-    derWriter.value(
+    derWriter.write(
+        name = "test",
         tagClass = DerHeader.TAG_CLASS_UNIVERSAL,
         tag = 16L
     ) {
 
-      derWriter.value(
+      derWriter.write(
+          name = "test",
           tagClass = DerHeader.TAG_CLASS_UNIVERSAL,
           tag = 21L
       ) {
         derWriter.writeOctetString("Smith".encodeUtf8())
       }
 
-      derWriter.value(
+      derWriter.write(
+          name = "test",
           tagClass = DerHeader.TAG_CLASS_UNIVERSAL,
           tag = 1L
       ) {
@@ -689,11 +699,11 @@ internal class DerTest {
 
   @Test fun `decode object identifier`() {
     val objectIdentifier = Adapters.OBJECT_IDENTIFIER.fromDer("06092a864886f70d01010b".decodeHex())
-    assertThat(objectIdentifier).isEqualTo("1.2.840.113549.1.1.11")
+    assertThat(objectIdentifier).isEqualTo(sha256WithRSAEncryption)
   }
 
   @Test fun `encode object identifier`() {
-    val byteString = Adapters.OBJECT_IDENTIFIER.toDer("1.2.840.113549.1.1.11")
+    val byteString = Adapters.OBJECT_IDENTIFIER.toDer(sha256WithRSAEncryption)
     assertThat(byteString).isEqualTo("06092a864886f70d01010b".decodeHex())
   }
 
@@ -712,7 +722,7 @@ internal class DerTest {
         .fromDer("300d06092a864886f70d01010b0500".decodeHex())
     assertThat(algorithmIdentifier).isEqualTo(
         AlgorithmIdentifier(
-            algorithm = "1.2.840.113549.1.1.11",
+            algorithm = sha256WithRSAEncryption,
             parameters = null
         )
     )
@@ -721,13 +731,14 @@ internal class DerTest {
   @Test fun `encode sequence algorithm`() {
     val byteString = CertificateAdapters.algorithmIdentifier.toDer(
         AlgorithmIdentifier(
-            algorithm = "1.2.840.113549.1.1.11",
+            algorithm = sha256WithRSAEncryption,
             parameters = null
         )
     )
 
-    // Note that the parameters value is omitted from the output because it is optional.
-    assertThat(byteString).isEqualTo("300b06092a864886f70d01010b".decodeHex())
+    // Note that the parameters value is included despite being optional because it's required by
+    // https://tools.ietf.org/html/rfc4055#section-2.1
+    assertThat(byteString).isEqualTo("300d06092a864886f70d01010b0500".decodeHex())
   }
 
   @Test fun `decode bit string`() {
@@ -774,11 +785,11 @@ internal class DerTest {
 
   @Test fun `extension with type hint for basic constraints`() {
     val extension = Extension(
-        ObjectIdentifiers.basicConstraints,
+        basicConstraints,
         false,
         BasicConstraints(true, 4)
     )
-    val bytes = "300f0603551d13240830060101ff020104".decodeHex()
+    val bytes = "300f0603551d13040830060101ff020104".decodeHex()
 
     assertThat(CertificateAdapters.extension.toDer(extension))
         .isEqualTo(bytes)
@@ -788,14 +799,14 @@ internal class DerTest {
 
   @Test fun `extension with type hint for subject alternative names`() {
     val extension = Extension(
-        ObjectIdentifiers.subjectAltName,
+        subjectAlternativeName,
         false,
         listOf(
             generalNameDnsName to "cash.app",
             generalNameDnsName to "www.cash.app"
         )
     )
-    val bytes = "30210603551d11241a30188208636173682e617070820c7777772e636173682e617070".decodeHex()
+    val bytes = "30210603551d11041a30188208636173682e617070820c7777772e636173682e617070".decodeHex()
 
     assertThat(CertificateAdapters.extension.toDer(extension))
         .isEqualTo(bytes)
@@ -805,7 +816,7 @@ internal class DerTest {
 
   @Test fun `extension with unknown type hint`() {
     val extension = Extension(
-        "2.5.4.3", // common name is not an extension.
+        commonName, // common name is not an extension.
         false,
         "3006800109810109".decodeHex()
     )
@@ -817,24 +828,13 @@ internal class DerTest {
         .isEqualTo(extension)
   }
 
-  private fun derAdapter(block: (Int, Long, Boolean, Long) -> Unit): DerAdapter<Unit> {
-    return object : DerAdapter<Unit>(-1, -1L) {
-      override fun encode(writer: DerWriter, value: Unit): Unit = throw error("unsupported")
+  /** Tags larger than 30 are a special case. */
+  @Test fun `large tag`() {
+    val bytes = "df83fb6800".decodeHex()
 
-      override fun decode(reader: DerReader, header: DerHeader) {
-        return block(header.tagClass, header.tag, header.constructed, header.length)
-      }
-    }
-  }
-
-  private fun DerWriter.value(tagClass: Int, tag: Long, block: (DerWriter) -> Unit) {
-    return write(object : DerAdapter<Unit?>(tagClass, tag) {
-      override fun encode(writer: DerWriter, value: Unit?) {
-        block(writer)
-      }
-
-      override fun decode(reader: DerReader, header: DerHeader): Unit? = throw error("unsupported")
-    }, null)
+    val adapter = Adapters.NULL.withTag(tagClass = DerHeader.TAG_CLASS_PRIVATE, tag = 65_000L)
+    assertThat(adapter.toDer(null)).isEqualTo(bytes)
+    assertThat(adapter.fromDer(bytes)).isNull()
   }
 
   /**
@@ -851,6 +851,7 @@ internal class DerTest {
   ) {
     companion object {
       val ADAPTER = Adapters.sequence(
+          "Point",
           Adapters.INTEGER_AS_LONG.withTag(tag = 0L).optional(),
           Adapters.INTEGER_AS_LONG.withTag(tag = 1L).optional(),
           decompose = { listOf(it.x, it.y) },
@@ -860,9 +861,9 @@ internal class DerTest {
   }
 
   private fun date(s: String): Date {
-    val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").apply {
+    return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").run {
       timeZone = TimeZone.getTimeZone("GMT")
+      parse(s)
     }
-    return format.parse(s)
   }
 }
