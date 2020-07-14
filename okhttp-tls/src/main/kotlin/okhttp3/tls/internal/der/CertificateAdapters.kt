@@ -16,8 +16,8 @@
 package okhttp3.tls.internal.der
 
 import java.math.BigInteger
+import java.net.ProtocolException
 import okio.ByteString
-import okio.IOException
 
 /**
  * ASN.1 adapters adapted from the specifications in [RFC 5280][rfc_5280].
@@ -47,7 +47,7 @@ internal object CertificateAdapters {
 
     override fun fromDer(reader: DerReader): Long {
       val peekHeader = reader.peekHeader()
-          ?: throw IOException("expected time but was exhausted at $reader")
+          ?: throw ProtocolException("expected time but was exhausted at $reader")
 
       return when {
         peekHeader.tagClass == Adapters.UTC_TIME.tagClass &&
@@ -58,12 +58,13 @@ internal object CertificateAdapters {
             peekHeader.tag == Adapters.GENERALIZED_TIME.tag -> {
           Adapters.GENERALIZED_TIME.fromDer(reader)
         }
-        else -> throw IOException("expected time but was $peekHeader at $reader")
+        else -> throw ProtocolException("expected time but was $peekHeader at $reader")
       }
     }
 
     override fun toDer(writer: DerWriter, value: Long) {
-      if (value < 2_524_608_000_000L) { // 2050-01-01T00:00:00Z
+      // [1950-01-01T00:00:00..2050-01-01T00:00:00Z)
+      if (value in -631_152_000_000L until 2_524_608_000_000L) {
         Adapters.UTC_TIME.toDer(writer, value)
       } else {
         Adapters.GENERALIZED_TIME.toDer(writer, value)
@@ -185,7 +186,8 @@ internal object CertificateAdapters {
   internal val generalNameIpAddress = Adapters.OCTET_STRING.withTag(tag = 7L)
   internal val generalName: DerAdapter<Pair<DerAdapter<*>, Any?>> = Adapters.choice(
       generalNameDnsName,
-      generalNameIpAddress
+      generalNameIpAddress,
+      Adapters.ANY_VALUE
   )
 
   /**
@@ -262,7 +264,11 @@ internal object CertificateAdapters {
   private val attributeTypeAndValue: BasicDerAdapter<AttributeTypeAndValue> = Adapters.sequence(
       "AttributeTypeAndValue",
       Adapters.OBJECT_IDENTIFIER,
-      Adapters.any(),
+      Adapters.any(
+          String::class to Adapters.UTF8_STRING,
+          Nothing::class to Adapters.PRINTABLE_STRING,
+          AnyValue::class to Adapters.ANY_VALUE
+      ),
       decompose = {
         listOf(
             it.type,
