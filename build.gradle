@@ -2,9 +2,9 @@ import net.ltgt.gradle.errorprone.CheckSeverity
 
 buildscript {
   ext.versions = [
-      'animalSniffer': '1.18',
+      'animalSniffer': '1.19',
       'assertj': '3.15.0',
-      'bouncycastle': '1.65',
+      'bouncycastle': '1.66',
       'brotli': '0.1.2',
       'checkstyle': '8.28',
       'conscrypt': '2.5.1',
@@ -16,16 +16,16 @@ buildscript {
       'jsoup': '1.13.1',
       'junit': '4.13',
       'kotlin': '1.4.10',
-      'moshi': '1.9.2',
+      'moshi': '1.10.0',
       'okio': '2.8.0',
       'ktlint': '0.38.0',
-      'picocli': '4.2.0',
+      'picocli': '4.5.1',
       'openjsse': '1.1.0'
   ]
 
   ext.deps = [
       'picocli': "info.picocli:picocli:${versions.picocli}",
-      'android': "org.robolectric:android-all:10-robolectric-5803371",
+      'android': "org.robolectric:android-all:11-robolectric-6757853",
       'animalSniffer': "org.codehaus.mojo:animal-sniffer-annotations:${versions.animalSniffer}",
       'assertj': "org.assertj:assertj-core:${versions.assertj}",
       'bouncycastle': "org.bouncycastle:bcprov-jdk15on:${versions.bouncycastle}",
@@ -60,7 +60,7 @@ buildscript {
 }
 
 plugins {
-  id "ru.vyarus.animalsniffer" version "1.5.0"
+  id "ru.vyarus.animalsniffer" version "1.5.1"
   id "com.github.johnrengelman.shadow" version "5.2.0"
   id "me.champeau.gradle.japicmp" version "0.2.9"
   id "com.diffplug.spotless" version "5.1.2"
@@ -144,8 +144,6 @@ subprojects { project ->
 
   // Animal Sniffer confirms we generally don't use APIs not on Java 8.
   animalsniffer {
-    // https://github.com/mojohaus/animal-sniffer/issues/70
-    excludeJars "android-all-*"
     annotation "okhttp3.internal.SuppressSignatureCheck"
     sourceSets = [sourceSets.main]
   }
