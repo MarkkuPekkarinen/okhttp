@@ -17,31 +17,33 @@ package okhttp3.testing
 
 import com.amazon.corretto.crypto.provider.AmazonCorrettoCryptoProvider
 import com.amazon.corretto.crypto.provider.SelfTestStatus
-import java.security.Security
 import okhttp3.internal.platform.ConscryptPlatform
 import okhttp3.internal.platform.Jdk8WithJettyBootPlatform
 import okhttp3.internal.platform.Jdk9Platform
 import okhttp3.internal.platform.OpenJSSEPlatform
 import okhttp3.internal.platform.Platform
+import org.assertj.core.api.Assumptions.assumeThat
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.jsse.provider.BouncyCastleJsseProvider
 import org.conscrypt.Conscrypt
 import org.hamcrest.BaseMatcher
-import org.hamcrest.CoreMatchers
-import org.hamcrest.CoreMatchers.equalTo
-import org.hamcrest.CoreMatchers.not
+import org.hamcrest.CoreMatchers.anything
 import org.hamcrest.Description
 import org.hamcrest.Matcher
 import org.hamcrest.StringDescription
 import org.hamcrest.TypeSafeMatcher
-import org.junit.Assert
-import org.junit.Assume.assumeFalse
-import org.junit.Assume.assumeThat
-import org.junit.Assume.assumeTrue
-import org.junit.AssumptionViolatedException
+import org.junit.jupiter.api.Assertions.fail
+import org.junit.jupiter.api.extension.AfterEachCallback
+import org.junit.jupiter.api.extension.BeforeEachCallback
+import org.junit.jupiter.api.extension.ExtensionContext
+import org.junit.jupiter.api.extension.InvocationInterceptor
+import org.junit.jupiter.api.extension.ReflectiveInvocationContext
 import org.junit.rules.TestRule
 import org.junit.runners.model.Statement
 import org.openjsse.net.ssl.OpenJSSE
+import org.opentest4j.TestAbortedException
+import java.lang.reflect.Method
+import java.security.Security
 
 /**
  * Marks a test as Platform aware, before the test runs a consistent Platform will be
@@ -53,8 +55,37 @@ import org.openjsse.net.ssl.OpenJSSE
 open class PlatformRule @JvmOverloads constructor(
   val requiredPlatformName: String? = null,
   val platform: Platform? = null
-) : TestRule {
+) : TestRule, BeforeEachCallback, AfterEachCallback, InvocationInterceptor {
   private val versionChecks = mutableListOf<Pair<Matcher<out Any>, Matcher<out Any>>>()
+
+  override fun beforeEach(context: ExtensionContext) {
+    setupPlatform()
+  }
+
+  override fun afterEach(context: ExtensionContext) {
+    resetPlatform()
+  }
+
+  override fun interceptTestMethod(
+    invocation: InvocationInterceptor.Invocation<Void>,
+    invocationContext: ReflectiveInvocationContext<Method>,
+    extensionContext: ExtensionContext
+  ) {
+    var failed = false
+    try {
+      invocation.proceed()
+    } catch (e: TestAbortedException) {
+      throw e
+    } catch (e: Throwable) {
+      failed = true
+      rethrowIfNotExpected(e)
+    } finally {
+      resetPlatform()
+    }
+    if (!failed) {
+      failIfExpected()
+    }
+  }
 
   override fun apply(
     base: Statement,
@@ -68,7 +99,7 @@ open class PlatformRule @JvmOverloads constructor(
           setupPlatform()
 
           base.evaluate()
-        } catch (e: AssumptionViolatedException) {
+        } catch (e: TestAbortedException) {
           throw e
         } catch (e: Throwable) {
           failed = true
@@ -85,7 +116,7 @@ open class PlatformRule @JvmOverloads constructor(
 
   fun setupPlatform() {
     if (requiredPlatformName != null) {
-      assumeThat(getPlatformSystemProperty(), equalTo(requiredPlatformName))
+      assumeThat(getPlatformSystemProperty()).isEqualTo(requiredPlatformName)
     }
 
     if (platform != null) {
@@ -127,7 +158,7 @@ open class PlatformRule @JvmOverloads constructor(
 
   private fun expectFailure(
     versionMatcher: Matcher<out Any>,
-    failureMatcher: Matcher<out Any> = CoreMatchers.anything()
+    failureMatcher: Matcher<out Any> = anything()
   ) {
     versionChecks.add(Pair(versionMatcher, failureMatcher))
   }
@@ -184,7 +215,7 @@ open class PlatformRule @JvmOverloads constructor(
         description.appendText(" expected to fail with exception that ")
         failureMatcher.describeTo(description)
 
-        Assert.fail(description.toString())
+        fail<Any>(description.toString())
       }
     }
   }
@@ -202,146 +233,82 @@ open class PlatformRule @JvmOverloads constructor(
   fun hasHttp2Support() = !isJdk8()
 
   fun assumeConscrypt() {
-    assumeThat(
-        getPlatformSystemProperty(), equalTo(
-        CONSCRYPT_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isEqualTo(CONSCRYPT_PROPERTY)
   }
 
   fun assumeJdk9() {
-    assumeThat(
-        getPlatformSystemProperty(), equalTo(
-        JDK9_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isEqualTo(JDK9_PROPERTY)
   }
 
   fun assumeOpenJSSE() {
-    assumeThat(
-        getPlatformSystemProperty(), equalTo(
-        OPENJSSE_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isEqualTo(OPENJSSE_PROPERTY)
   }
 
   fun assumeJdk8() {
-    assumeThat(
-        getPlatformSystemProperty(), equalTo(
-        JDK8_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isEqualTo(JDK8_PROPERTY)
   }
 
   fun assumeJdk8Alpn() {
-    assumeThat(
-        getPlatformSystemProperty(), equalTo(
-        JDK8_ALPN_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isEqualTo(JDK8_ALPN_PROPERTY)
   }
 
   fun assumeCorretto() {
-    assumeThat(
-        getPlatformSystemProperty(), equalTo(
-        CORRETTO_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isEqualTo(CORRETTO_PROPERTY)
   }
 
   fun assumeBouncyCastle() {
-    assumeThat(
-        getPlatformSystemProperty(), equalTo(
-        BOUNCYCASTLE_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isEqualTo(BOUNCYCASTLE_PROPERTY)
   }
 
   fun assumeHttp2Support() {
-    assumeThat(
-        getPlatformSystemProperty(), not(
-        JDK8_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isNotEqualTo(JDK8_PROPERTY)
   }
 
   fun assumeAndroid() {
-    assumeTrue("Only Android platform supported", Platform.isAndroid)
+    assumeThat(Platform.isAndroid).isTrue
   }
 
   fun assumeNotConscrypt() {
-    assumeThat(
-        getPlatformSystemProperty(), not(
-        CONSCRYPT_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isNotEqualTo(CONSCRYPT_PROPERTY)
   }
 
   fun assumeNotJdk9() {
-    assumeThat(
-        getPlatformSystemProperty(), not(
-        JDK9_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isNotEqualTo(JDK9_PROPERTY)
   }
 
   fun assumeNotJdk8() {
-    assumeThat(
-        getPlatformSystemProperty(), not(
-        JDK8_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isNotEqualTo(JDK8_PROPERTY)
   }
 
   fun assumeNotJdk8Alpn() {
-    assumeThat(
-        getPlatformSystemProperty(), not(
-        JDK8_ALPN_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isNotEqualTo(JDK8_ALPN_PROPERTY)
   }
 
   fun assumeNotOpenJSSE() {
-    assumeThat(
-        getPlatformSystemProperty(), not(
-        OPENJSSE_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isNotEqualTo(OPENJSSE_PROPERTY)
   }
 
   fun assumeNotCorretto() {
-    assumeThat(
-        getPlatformSystemProperty(), not(
-        CORRETTO_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isNotEqualTo(CORRETTO_PROPERTY)
   }
 
   fun assumeNotBouncyCastle() {
     // Most failures are with MockWebServer
     // org.bouncycastle.tls.TlsFatalAlertReceived: handshake_failure(40)
     //        at org.bouncycastle.tls.TlsProtocol.handleAlertMessage(TlsProtocol.java:241)
-    assumeThat(
-        getPlatformSystemProperty(), not(
-        BOUNCYCASTLE_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isNotEqualTo(BOUNCYCASTLE_PROPERTY)
   }
 
   fun assumeNotHttp2Support() {
-    assumeThat(
-        getPlatformSystemProperty(), equalTo(
-        JDK8_PROPERTY
-    )
-    )
+    assumeThat(getPlatformSystemProperty()).isEqualTo(JDK8_PROPERTY)
   }
 
   fun assumeJettyBootEnabled() {
-    assumeTrue("ALPN Boot not enabled", isAlpnBootEnabled())
+    assumeThat(isAlpnBootEnabled()).isTrue
   }
 
   fun assumeNotAndroid() {
-    assumeFalse("Android platform not supported", Platform.isAndroid)
+    assumeThat(Platform.isAndroid).isFalse
   }
 
   companion object {

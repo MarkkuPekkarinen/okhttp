@@ -15,6 +15,7 @@
  */
 package okhttp3.internal.http2;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.Authenticator;
@@ -22,7 +23,6 @@ import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -34,6 +34,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nullable;
 import javax.net.ssl.SSLException;
+import mockwebserver3.Dispatcher;
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
+import mockwebserver3.PushPromise;
+import mockwebserver3.QueueDispatcher;
+import mockwebserver3.RecordedRequest;
+import mockwebserver3.SocketPolicy;
 import okhttp3.Cache;
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -52,19 +59,13 @@ import okhttp3.RecordingHostnameVerifier;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.SimpleProvider;
 import okhttp3.TestLogHandler;
 import okhttp3.TestUtil;
 import okhttp3.internal.DoubleInetAddressDns;
 import okhttp3.internal.RecordingOkAuthenticator;
 import okhttp3.internal.Util;
 import okhttp3.internal.connection.RealConnection;
-import okhttp3.mockwebserver.Dispatcher;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-import okhttp3.mockwebserver.PushPromise;
-import okhttp3.mockwebserver.QueueDispatcher;
-import okhttp3.mockwebserver.RecordedRequest;
-import okhttp3.mockwebserver.SocketPolicy;
 import okhttp3.testing.Flaky;
 import okhttp3.testing.PlatformRule;
 import okhttp3.tls.HandshakeCertificates;
@@ -72,19 +73,13 @@ import okio.Buffer;
 import okio.BufferedSink;
 import okio.GzipSink;
 import okio.Okio;
-import org.jetbrains.annotations.NotNull;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.RuleChain;
-import org.junit.rules.TemporaryFolder;
-import org.junit.rules.TestRule;
-import org.junit.rules.Timeout;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ArgumentsSource;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
@@ -99,7 +94,7 @@ import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
 
 /** Test how HTTP/2 interacts with HTTP features. */
-@RunWith(Parameterized.class)
+@Timeout(60)
 @Flaky
 public final class HttpOverHttp2Test {
   // Flaky https://github.com/square/okhttp/issues/4632
@@ -107,37 +102,34 @@ public final class HttpOverHttp2Test {
 
   private static final HandshakeCertificates handshakeCertificates = localhost();
 
-  @Parameters(name = "{0}")
-  public static Collection<Protocol> data() {
-    return asList(Protocol.H2_PRIOR_KNOWLEDGE, Protocol.HTTP_2);
+  public static class ProtocolParamProvider extends SimpleProvider {
+    @Override
+    public List<Object> arguments() {
+      return asList(Protocol.H2_PRIOR_KNOWLEDGE, Protocol.HTTP_2);
+    }
   }
 
-  private final PlatformRule platform = new PlatformRule();
-  private final OkHttpClientTestRule clientTestRule = configureClientTestRule();
-  @Rule public final TestRule chain = RuleChain.outerRule(platform)
-      .around(new Timeout(60, SECONDS))
-      .around(clientTestRule);
-  @Rule public final TemporaryFolder tempDir = new TemporaryFolder();
-  @Rule public final MockWebServer server = new MockWebServer();
-  @Rule public final TestLogHandler testLogHandler = new TestLogHandler(Http2.class);
+  @TempDir public File tempDir;
+  @RegisterExtension public final PlatformRule platform = new PlatformRule();
+  @RegisterExtension public final OkHttpClientTestRule clientTestRule = configureClientTestRule();
+  @RegisterExtension public final TestLogHandler testLogHandler = new TestLogHandler(Http2.class);
 
+  private MockWebServer server;
+  private Protocol protocol;
   private OkHttpClient client;
   private Cache cache;
   private String scheme;
-  private Protocol protocol;
 
-  public HttpOverHttp2Test(Protocol protocol) {
-    this.protocol = protocol;
-  }
-
-
-  @NotNull private OkHttpClientTestRule configureClientTestRule() {
+  private OkHttpClientTestRule configureClientTestRule() {
     OkHttpClientTestRule clientTestRule = new OkHttpClientTestRule();
     clientTestRule.setRecordTaskRunner(true);
     return clientTestRule;
   }
 
-  @Before public void setUp() {
+  public void setUp(Protocol protocol, MockWebServer server) {
+    this.server = server;
+    this.protocol = protocol;
+
     platform.assumeNotOpenJSSE();
     platform.assumeNotBouncyCastle();
 
@@ -159,14 +151,18 @@ public final class HttpOverHttp2Test {
       scheme = "http";
     }
 
-    cache = new Cache(tempDir.getRoot(), Integer.MAX_VALUE);
+    cache = new Cache(tempDir, Integer.MAX_VALUE);
   }
 
-  @After public void tearDown() {
+  @AfterEach public void tearDown() {
     Authenticator.setDefault(null);
   }
 
-  @Test public void get() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void get(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setBody("ABCDE")
         .setStatus("HTTP/1.1 200 Sweet"));
@@ -188,7 +184,11 @@ public final class HttpOverHttp2Test {
         (server.getHostName() + ":" + server.getPort()));
   }
 
-  @Test public void get204Response() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void get204Response(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     MockResponse responseWithoutBody = new MockResponse();
     responseWithoutBody.status("HTTP/1.1 204");
     responseWithoutBody.removeHeader("Content-Length");
@@ -212,7 +212,11 @@ public final class HttpOverHttp2Test {
     assertThat(request.getRequestLine()).isEqualTo("GET /foo HTTP/1.1");
   }
 
-  @Test public void head() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void head(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     MockResponse mockResponse = new MockResponse().setHeader("Content-Length", 5);
     mockResponse.status("HTTP/1.1 200");
     server.enqueue(mockResponse);
@@ -235,7 +239,11 @@ public final class HttpOverHttp2Test {
     assertThat(request.getRequestLine()).isEqualTo("HEAD /foo HTTP/1.1");
   }
 
-  @Test public void emptyResponse() throws IOException {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void emptyResponse(
+      Protocol protocol, MockWebServer mockWebServer) throws IOException {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse());
 
     Call call = client.newCall(new Request.Builder()
@@ -247,7 +255,11 @@ public final class HttpOverHttp2Test {
     response.body().close();
   }
 
-  @Test public void noDefaultContentLengthOnStreamingPost() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void noDefaultContentLengthOnStreamingPost(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     byte[] postBytes = "FGHIJ".getBytes(UTF_8);
 
     server.enqueue(new MockResponse().setBody("ABCDE"));
@@ -274,7 +286,11 @@ public final class HttpOverHttp2Test {
     assertThat(request.getHeader("Content-Length")).isNull();
   }
 
-  @Test public void userSuppliedContentLengthHeader() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void userSuppliedContentLengthHeader(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     byte[] postBytes = "FGHIJ".getBytes(UTF_8);
 
     server.enqueue(new MockResponse().setBody("ABCDE"));
@@ -306,7 +322,11 @@ public final class HttpOverHttp2Test {
         (long) postBytes.length);
   }
 
-  @Test public void closeAfterFlush() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void closeAfterFlush(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     byte[] postBytes = "FGHIJ".getBytes(UTF_8);
 
     server.enqueue(new MockResponse().setBody("ABCDE"));
@@ -340,7 +360,11 @@ public final class HttpOverHttp2Test {
         (long) postBytes.length);
   }
 
-  @Test public void connectionReuse() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void connectionReuse(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse().setBody("ABCDEF"));
     server.enqueue(new MockResponse().setBody("GHIJKL"));
 
@@ -364,7 +388,11 @@ public final class HttpOverHttp2Test {
     response2.close();
   }
 
-  @Test public void connectionWindowUpdateAfterCanceling() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void connectionWindowUpdateAfterCanceling(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setBody(new Buffer().write(new byte[Http2Connection.OKHTTP_CLIENT_WINDOW_SIZE + 1])));
     server.enqueue(new MockResponse()
@@ -403,7 +431,11 @@ public final class HttpOverHttp2Test {
     }
   }
 
-  @Test public void connectionWindowUpdateOnClose() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void connectionWindowUpdateOnClose(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setBody(new Buffer().write(new byte[Http2Connection.OKHTTP_CLIENT_WINDOW_SIZE + 1])));
     server.enqueue(new MockResponse()
@@ -428,7 +460,11 @@ public final class HttpOverHttp2Test {
     assertThat(response2.body().string()).isEqualTo("abc");
   }
 
-  @Test public void concurrentRequestWithEmptyFlowControlWindow() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void concurrentRequestWithEmptyFlowControlWindow(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setBody(new Buffer().write(new byte[Http2Connection.OKHTTP_CLIENT_WINDOW_SIZE])));
     server.enqueue(new MockResponse()
@@ -462,7 +498,11 @@ public final class HttpOverHttp2Test {
   }
 
   /** https://github.com/square/okhttp/issues/373 */
-  @Test @Ignore public void synchronousRequest() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  @Disabled public void synchronousRequest(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse().setBody("A"));
     server.enqueue(new MockResponse().setBody("A"));
 
@@ -475,7 +515,11 @@ public final class HttpOverHttp2Test {
     assertThat(server.takeRequest().getSequenceNumber()).isEqualTo(1);
   }
 
-  @Test public void gzippedResponseBody() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void gzippedResponseBody(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .addHeader("Content-Encoding: gzip")
         .setBody(gzip("ABCABCABC")));
@@ -488,7 +532,11 @@ public final class HttpOverHttp2Test {
     assertThat(response.body().string()).isEqualTo("ABCABCABC");
   }
 
-  @Test public void authenticate() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void authenticate(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setResponseCode(HttpURLConnection.HTTP_UNAUTHORIZED)
         .addHeader("www-authenticate: Basic realm=\"protected area\"")
@@ -514,7 +562,11 @@ public final class HttpOverHttp2Test {
     assertThat(accepted.getHeader("Authorization")).isEqualTo(credential);
   }
 
-  @Test public void redirect() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void redirect(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse().setResponseCode(HttpURLConnection.HTTP_MOVED_TEMP)
         .addHeader("Location: /foo")
         .setBody("This page has moved!"));
@@ -533,7 +585,11 @@ public final class HttpOverHttp2Test {
     assertThat(request2.getPath()).isEqualTo("/foo");
   }
 
-  @Test public void readAfterLastByte() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void readAfterLastByte(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse().setBody("ABC"));
 
     Call call = client.newCall(new Request.Builder()
@@ -551,7 +607,11 @@ public final class HttpOverHttp2Test {
     in.close();
   }
 
-  @Test public void readResponseHeaderTimeout() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void readResponseHeaderTimeout(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE));
     server.enqueue(new MockResponse().setBody("A"));
 
@@ -587,7 +647,11 @@ public final class HttpOverHttp2Test {
    * case, we take a 4KiB body and throttle it to 1KiB/second.  We set the read timeout to two
    * seconds.  If our implementation is acting correctly, it will not throw, as it is progressing.
    */
-  @Test public void readTimeoutMoreGranularThanBodySize() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void readTimeoutMoreGranularThanBodySize(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     char[] body = new char[4096]; // 4KiB to read.
     Arrays.fill(body, 'y');
     server.enqueue(new MockResponse().setBody(new String(body))
@@ -611,7 +675,11 @@ public final class HttpOverHttp2Test {
    * second.  If our implementation is acting correctly, it will throw, as a byte doesn't arrive in
    * time.
    */
-  @Test public void readTimeoutOnSlowConnection() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void readTimeoutOnSlowConnection(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     String body = TestUtil.repeat('y', 2048);
     server.enqueue(new MockResponse()
         .setBody(body)
@@ -647,7 +715,11 @@ public final class HttpOverHttp2Test {
     assertThat(server.takeRequest().getSequenceNumber()).isEqualTo(1);
   }
 
-  @Test public void connectionTimeout() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void connectionTimeout(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setBody("A")
         .setBodyDelay(1, SECONDS));
@@ -682,7 +754,11 @@ public final class HttpOverHttp2Test {
     assertThat(server.takeRequest().getSequenceNumber()).isEqualTo(1);
   }
 
-  @Test public void responsesAreCached() throws IOException {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void responsesAreCached(
+      Protocol protocol, MockWebServer mockWebServer) throws IOException {
+    setUp(protocol, mockWebServer);
     client = client.newBuilder()
         .cache(cache)
         .build();
@@ -718,7 +794,11 @@ public final class HttpOverHttp2Test {
     assertThat(cache.hitCount()).isEqualTo(2);
   }
 
-  @Test public void conditionalCache() throws IOException {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void conditionalCache(
+      Protocol protocol, MockWebServer mockWebServer) throws IOException {
+    setUp(protocol, mockWebServer);
     client = client.newBuilder()
         .cache(cache)
         .build();
@@ -750,7 +830,11 @@ public final class HttpOverHttp2Test {
     assertThat(cache.hitCount()).isEqualTo(1);
   }
 
-  @Test public void responseCachedWithoutConsumingFullBody() throws IOException {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void responseCachedWithoutConsumingFullBody(
+      Protocol protocol, MockWebServer mockWebServer) throws IOException {
+    setUp(protocol, mockWebServer);
     client = client.newBuilder()
         .cache(cache)
         .build();
@@ -777,7 +861,11 @@ public final class HttpOverHttp2Test {
     response2.body().close();
   }
 
-  @Test public void sendRequestCookies() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void sendRequestCookies(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     RecordingCookieJar cookieJar = new RecordingCookieJar();
     Cookie requestCookie = new Cookie.Builder()
         .name("a")
@@ -800,7 +888,11 @@ public final class HttpOverHttp2Test {
     assertThat(request.getHeader("Cookie")).isEqualTo("a=b");
   }
 
-  @Test public void receiveResponseCookies() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void receiveResponseCookies(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     RecordingCookieJar cookieJar = new RecordingCookieJar();
     client = client.newBuilder()
         .cookieJar(cookieJar)
@@ -818,7 +910,11 @@ public final class HttpOverHttp2Test {
     cookieJar.assertResponseCookies("a=b; path=/");
   }
 
-  @Test public void cancelWithStreamNotCompleted() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void cancelWithStreamNotCompleted(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setBody("abc"));
     server.enqueue(new MockResponse()
@@ -844,7 +940,11 @@ public final class HttpOverHttp2Test {
     response.close();
   }
 
-  @Test public void recoverFromOneRefusedStreamReusesConnection() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void recoverFromOneRefusedStreamReusesConnection(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
         .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.getHttpCode()));
@@ -868,8 +968,11 @@ public final class HttpOverHttp2Test {
    * errors. The problem was that the logic that decided whether to reuse a route didn't track
    * certain HTTP/2 errors. https://github.com/square/okhttp/issues/5547
    */
-  @Test
-  public void noRecoveryFromTwoRefusedStreams() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void noRecoveryFromTwoRefusedStreams(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
         .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.getHttpCode()));
@@ -890,11 +993,19 @@ public final class HttpOverHttp2Test {
     }
   }
 
-  @Test public void recoverFromOneInternalErrorRequiresNewConnection() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void recoverFromOneInternalErrorRequiresNewConnection(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     recoverFromOneHttp2ErrorRequiresNewConnection(ErrorCode.INTERNAL_ERROR);
   }
 
-  @Test public void recoverFromOneCancelRequiresNewConnection() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void recoverFromOneCancelRequiresNewConnection(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     recoverFromOneHttp2ErrorRequiresNewConnection(ErrorCode.CANCEL);
   }
 
@@ -921,7 +1032,11 @@ public final class HttpOverHttp2Test {
     assertThat(server.takeRequest().getSequenceNumber()).isEqualTo(0);
   }
 
-  @Test public void recoverFromMultipleRefusedStreamsRequiresNewConnection() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void recoverFromMultipleRefusedStreamsRequiresNewConnection(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
         .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.getHttpCode()));
@@ -949,7 +1064,11 @@ public final class HttpOverHttp2Test {
     assertThat(server.takeRequest().getSequenceNumber()).isEqualTo(0);
   }
 
-  @Test public void recoverFromCancelReusesConnection() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void recoverFromCancelReusesConnection(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     List<CountDownLatch> responseDequeuedLatches = Arrays.asList(
         new CountDownLatch(1),
         // No synchronization is needed for the last request, which is not canceled.
@@ -982,7 +1101,11 @@ public final class HttpOverHttp2Test {
     assertThat(server.takeRequest().getSequenceNumber()).isEqualTo(1);
   }
 
-  @Test public void recoverFromMultipleCancelReusesConnection() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void recoverFromMultipleCancelReusesConnection(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     List<CountDownLatch> responseDequeuedLatches = Arrays.asList(
         new CountDownLatch(1),
         new CountDownLatch(1),
@@ -1074,15 +1197,27 @@ public final class HttpOverHttp2Test {
     latch.await();
   }
 
-  @Test public void noRecoveryFromRefusedStreamWithRetryDisabled() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void noRecoveryFromRefusedStreamWithRetryDisabled(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     noRecoveryFromErrorWithRetryDisabled(ErrorCode.REFUSED_STREAM);
   }
 
-  @Test public void noRecoveryFromInternalErrorWithRetryDisabled() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void noRecoveryFromInternalErrorWithRetryDisabled(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     noRecoveryFromErrorWithRetryDisabled(ErrorCode.INTERNAL_ERROR);
   }
 
-  @Test public void noRecoveryFromCancelWithRetryDisabled() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void noRecoveryFromCancelWithRetryDisabled(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     noRecoveryFromErrorWithRetryDisabled(ErrorCode.CANCEL);
   }
 
@@ -1108,7 +1243,11 @@ public final class HttpOverHttp2Test {
     }
   }
 
-  @Test public void recoverFromConnectionNoNewStreamsOnFollowUp() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void recoverFromConnectionNoNewStreamsOnFollowUp(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setResponseCode(401));
     server.enqueue(new MockResponse()
@@ -1174,7 +1313,11 @@ public final class HttpOverHttp2Test {
     assertThat(server.takeRequest().getSequenceNumber()).isEqualTo(2);
   }
 
-  @Test public void nonAsciiResponseHeader() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void nonAsciiResponseHeader(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .addHeaderLenient("Alpha", "α")
         .addHeaderLenient("β", "Beta"));
@@ -1189,7 +1332,11 @@ public final class HttpOverHttp2Test {
     assertThat(response.header("β")).isEqualTo("Beta");
   }
 
-  @Test public void serverSendsPushPromise_GET() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void serverSendsPushPromise_GET(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     PushPromise pushPromise = new PushPromise("GET", "/foo/bar", Headers.of("foo", "bar"),
         new MockResponse().setBody("bar").setStatus("HTTP/1.1 200 Sweet"));
     server.enqueue(new MockResponse()
@@ -1218,7 +1365,11 @@ public final class HttpOverHttp2Test {
     assertThat(pushedRequest.getHeader("foo")).isEqualTo("bar");
   }
 
-  @Test public void serverSendsPushPromise_HEAD() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void serverSendsPushPromise_HEAD(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     PushPromise pushPromise = new PushPromise("HEAD", "/foo/bar", Headers.of("foo", "bar"),
         new MockResponse().setStatus("HTTP/1.1 204 Sweet"));
     server.enqueue(new MockResponse()
@@ -1246,7 +1397,11 @@ public final class HttpOverHttp2Test {
     assertThat(pushedRequest.getHeader("foo")).isEqualTo("bar");
   }
 
-  @Test public void noDataFramesSentWithNullRequestBody() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void noDataFramesSentWithNullRequestBody(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setBody("ABC"));
 
@@ -1266,7 +1421,11 @@ public final class HttpOverHttp2Test {
         .contains("HEADERS       END_STREAM|END_HEADERS");
   }
 
-  @Test public void emptyDataFrameSentWithEmptyBody() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void emptyDataFrameSentWithEmptyBody(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setBody("ABC"));
 
@@ -1293,7 +1452,11 @@ public final class HttpOverHttp2Test {
         .isEqualTo((long) 1);
   }
 
-  @Test public void pingsTransmitted() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void pingsTransmitted(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     // Ping every 500 ms, starting at 500 ms.
     client = client.newBuilder()
         .pingInterval(Duration.ofMillis(500))
@@ -1325,7 +1488,11 @@ public final class HttpOverHttp2Test {
   }
 
   @Flaky
-  @Test public void missingPongsFailsConnection() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void missingPongsFailsConnection(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     if (protocol == Protocol.HTTP_2) {
       // https://github.com/square/okhttp/issues/5221
       platform.expectFailureOnJdkVersion(12);
@@ -1366,7 +1533,11 @@ public final class HttpOverHttp2Test {
         (long) 0);
   }
 
-  @Test public void streamTimeoutDegradesConnectionAfterNoPong() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void streamTimeoutDegradesConnectionAfterNoPong(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     TestUtil.assumeNotWindows();
 
     client = client.newBuilder()
@@ -1411,7 +1582,11 @@ public final class HttpOverHttp2Test {
     }
   }
 
-  @Test public void oneStreamTimeoutDoesNotBreakConnection() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void oneStreamTimeoutDoesNotBreakConnection(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     client = client.newBuilder()
         .readTimeout(Duration.ofMillis(500))
         .build();
@@ -1480,7 +1655,11 @@ public final class HttpOverHttp2Test {
    * Push a setting that permits up to 2 concurrent streams, then make 3 concurrent requests and
    * confirm that the third concurrent request prepared a new connection.
    */
-  @Test public void settingsLimitsMaxConcurrentStreams() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void settingsLimitsMaxConcurrentStreams(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     Settings settings = new Settings();
     settings.set(Settings.MAX_CONCURRENT_STREAMS, 2);
 
@@ -1528,7 +1707,11 @@ public final class HttpOverHttp2Test {
     assertThat(server.takeRequest().getSequenceNumber()).isEqualTo(0);
   }
 
-  @Test public void connectionNotReusedAfterShutdown() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void connectionNotReusedAfterShutdown(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END)
         .setBody("ABC"));
@@ -1554,7 +1737,11 @@ public final class HttpOverHttp2Test {
    * This simulates a race condition where we receive a healthy HTTP/2 connection and just prior to
    * writing our request, we get a GOAWAY frame from the server.
    */
-  @Test public void connectionShutdownAfterHealthCheck() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void connectionShutdownAfterHealthCheck(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse()
         .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END)
         .setBody("ABC"));
@@ -1595,7 +1782,11 @@ public final class HttpOverHttp2Test {
   }
 
   @Flaky
-  @Test public void responseHeadersAfterGoaway() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void responseHeadersAfterGoaway(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     // Flaky https://github.com/square/okhttp/issues/4836
     server.enqueue(new MockResponse()
         .setHeadersDelay(1, SECONDS)
@@ -1629,7 +1820,11 @@ public final class HttpOverHttp2Test {
    *
    * <p>This test uses proxy tunnels to get a hook while a connection is being established.
    */
-  @Test public void concurrentHttp2ConnectionsDeduplicated() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void concurrentHttp2ConnectionsDeduplicated(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     assumeTrue(protocol == Protocol.HTTP_2);
 
     server.useHttps(handshakeCertificates.sslSocketFactory(), true);
@@ -1711,7 +1906,11 @@ public final class HttpOverHttp2Test {
   }
 
   /** https://github.com/square/okhttp/issues/3103 */
-  @Test public void domainFronting() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void domainFronting(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     client = client.newBuilder()
         .addNetworkInterceptor(new Interceptor() {
           @Override public Response intercept(Chain chain) throws IOException {
@@ -1769,8 +1968,11 @@ public final class HttpOverHttp2Test {
   }
 
   /** https://github.com/square/okhttp/issues/4875 */
-  @Test
-  public void shutdownAfterLateCoalescing() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void shutdownAfterLateCoalescing(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     CountDownLatch latch = new CountDownLatch(2);
 
     Callback callback = new Callback() {
@@ -1803,7 +2005,11 @@ public final class HttpOverHttp2Test {
     latch.await();
   }
 
-  @Test public void cancelWhileWritingRequestBodySendsCancelToServer() throws Exception {
+  @ParameterizedTest
+  @ArgumentsSource(ProtocolParamProvider.class)
+  public void cancelWhileWritingRequestBodySendsCancelToServer(
+      Protocol protocol, MockWebServer mockWebServer) throws Exception {
+    setUp(protocol, mockWebServer);
     server.enqueue(new MockResponse());
 
     AtomicReference<Call> callReference = new AtomicReference<>();

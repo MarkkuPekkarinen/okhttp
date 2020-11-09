@@ -1,7 +1,12 @@
+applyOsgi(this)
+
 jar {
-  manifest {
-    attributes('Automatic-Module-Name': 'okhttp3.brotli')
-  }
+  // MANIFEST.MF, including OSGi bnd instructions.
+  bnd '''
+  Export-Package: okhttp3.brotli
+  Automatic-Module-Name: okhttp3.brotli
+  Bundle-SymbolicName: com.squareup.okhttp3.brotli
+  '''
 }
 
 dependencies {
@@ -10,7 +15,6 @@ dependencies {
   compileOnly deps.jsr305
 
   testImplementation project(':okhttp-testing-support')
-  testImplementation project(':mockwebserver')
   testImplementation deps.conscrypt
   testImplementation deps.junit
   testImplementation deps.assertj

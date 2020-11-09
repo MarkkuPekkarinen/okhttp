@@ -1,7 +1,12 @@
+applyOsgi(this)
+
 jar {
-  manifest {
-    attributes('Automatic-Module-Name': 'okhttp3.dnsoverhttps')
-  }
+  // MANIFEST.MF, including OSGi bnd instructions.
+  bnd '''
+  Export-Package: okhttp3.dnsoverhttps
+  Automatic-Module-Name: okhttp3.dnsoverhttps
+  Bundle-SymbolicName: com.squareup.okhttp3.dnsoverhttps
+  '''
 }
 
 dependencies {
@@ -9,7 +14,8 @@ dependencies {
   compileOnly deps.jsr305
 
   testImplementation project(':okhttp-testing-support')
-  testImplementation project(':mockwebserver')
+  testImplementation project(':mockwebserver-deprecated')
+  testRuntimeOnly project(':mockwebserver-junit5')
   testImplementation deps.conscrypt
   testImplementation deps.junit
   testImplementation deps.assertj

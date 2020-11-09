@@ -1,5 +1,3 @@
-import net.ltgt.gradle.errorprone.CheckSeverity
-
 buildscript {
   ext.versions = [
       'animalSniffer': '1.19',
@@ -15,12 +13,15 @@ buildscript {
       'jnrUnixsocket': '0.28',
       'jsoup': '1.13.1',
       'junit': '4.13',
+      'junit5': '5.7.0',
       'kotlin': '1.4.10',
-      'moshi': '1.10.0',
-      'okio': '2.8.0',
+      'moshi': '1.11.0',
+      'okio': '2.9.0',
       'ktlint': '0.38.0',
       'picocli': '4.5.1',
-      'openjsse': '1.1.0'
+      'openjsse': '1.1.0',
+      'bnd': '5.1.2',
+      'equinox': '3.16.0'
   ]
 
   ext.deps = [
@@ -39,17 +40,27 @@ buildscript {
       'jsoup': "org.jsoup:jsoup:${versions.jsoup}",
       'jsr305': "com.google.code.findbugs:jsr305:${versions.findbugs}",
       'junit': "junit:junit:${versions.junit}",
+      'junit5Api': "org.junit.jupiter:junit-jupiter-api:${versions.junit5}",
+      'junit5JupiterEngine': "org.junit.jupiter:junit-jupiter-engine:${versions.junit5}",
+      'junit5JupiterParams': "org.junit.jupiter:junit-jupiter-params:${versions.junit5}",
+      'junit5VintageEngine': "org.junit.vintage:junit-vintage-engine:${versions.junit5}",
+      'junitPlatformConsole': "org.junit.platform:junit-platform-console:1.7.0",
       'kotlinStdlib': "org.jetbrains.kotlin:kotlin-stdlib:${versions.kotlin}",
       'moshi': "com.squareup.moshi:moshi:${versions.moshi}",
       'moshiKotlin': "com.squareup.moshi:moshi-kotlin-codegen:${versions.moshi}",
       'okio': "com.squareup.okio:okio:${versions.okio}",
-      'openjsse': "org.openjsse:openjsse:${versions.openjsse}"
+      'openjsse': "org.openjsse:openjsse:${versions.openjsse}",
+      'bnd': "biz.aQute.bnd:biz.aQute.bnd.gradle:${versions.bnd}",
+      'bndResolve': "biz.aQute.bnd:biz.aQute.resolve:${versions.bnd}",
+      'equinox': "org.eclipse.platform:org.eclipse.osgi:${versions.equinox}",
+      'kotlinStdlibOsgi': "org.jetbrains.kotlin:kotlin-osgi-bundle:${versions.kotlin}"
   ]
 
   dependencies {
     classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.4.10"
     classpath "org.jetbrains.dokka:dokka-gradle-plugin:0.10.1"
     classpath "com.android.tools.build:gradle:4.0.1"
+    classpath deps.bnd
   }
 
   repositories {
@@ -71,8 +82,15 @@ plugins {
 ext.publishedArtifactId = { project ->
   if (project.name == 'okhttp-logging-interceptor') {
     return 'logging-interceptor'
-  } else if (project.name == 'mockwebserver'
-          || project.name == 'okcurl'
+  } else if (project.name == 'mockwebserver') {
+    return 'mockwebserver3'
+  } else if (project.name == 'mockwebserver-junit4') {
+    return 'mockwebserver3-junit4'
+  } else if (project.name == 'mockwebserver-junit5') {
+    return 'mockwebserver3-junit5'
+  } else if (project.name == 'mockwebserver-deprecated') {
+    return 'mockwebserver'
+  } else if (project.name == 'okcurl'
           || project.name == 'okhttp'
           || project.name == 'okhttp-bom'
           || project.name == 'okhttp-brotli'
@@ -107,6 +125,23 @@ allprojects {
   }
 }
 
+ext.applyOsgi = { project ->
+  project.apply plugin: 'biz.aQute.bnd.builder'
+
+  project.sourceSets {
+    osgi
+  }
+
+  project.jar { t ->
+    t.setClasspath(project.sourceSets.osgi['compileClasspath'] + project.sourceSets.main['compileClasspath'])
+  }
+
+  project.dependencies {
+    // The OSGi kotlin-stdlib lets bnd infer bundle versions.
+    osgiApi deps.kotlinStdlibOsgi
+  }
+}
+
 /** Configure building for Java+Kotlin projects. */
 subprojects { project ->
   if (project.name == 'android-test') return
@@ -118,11 +153,19 @@ subprojects { project ->
   apply plugin: 'checkstyle'
   apply plugin: 'ru.vyarus.animalsniffer'
   apply plugin: 'org.jetbrains.dokka'
+  apply plugin: 'biz.aQute.bnd.builder'
+
   sourceCompatibility = JavaVersion.VERSION_1_8
   targetCompatibility = JavaVersion.VERSION_1_8
 
   tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
+  }
+
+  java {
+    toolchain {
+      languageVersion = JavaLanguageVersion.of(11)
+    }
   }
 
   checkstyleMain.exclude '**/CipherSuite.java'
@@ -159,13 +202,19 @@ subprojects { project ->
   }
 
   def platform = System.getProperty("okhttp.platform", "jdk9")
-  def platformJavaHome = System.getProperty('test.java.home')
+  def testJavaVersion = Integer.getInteger("test.java.version", 11)
+
+  dependencies {
+    testRuntimeOnly(deps.junit5JupiterEngine)
+    testRuntimeOnly(deps.junit5VintageEngine)
+  }
 
   test {
+    useJUnitPlatform()
     jvmArgs += "-Dokhttp.platform=$platform"
 
-    if (platformJavaHome != null) {
-      executable = "$platformJavaHome/bin/java"
+    javaLauncher = javaToolchains.launcherFor {
+      languageVersion = JavaLanguageVersion.of(testJavaVersion)
     }
 
     maxParallelForks Runtime.runtime.availableProcessors() * 2
@@ -174,6 +223,7 @@ subprojects { project ->
     }
 
     systemProperty 'okhttp.platform', platform
+    systemProperty 'junit.jupiter.extensions.autodetection.enabled', 'true'
   }
 
   if (platform == "jdk8alpn") {

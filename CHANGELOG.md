@@ -1,6 +1,36 @@
 Change Log
 ==========
 
+## Version 4.10.0-RC1
+
+_2020-10-06_
+
+**This release candidate adds support for [GraalVM][graalvm].**
+
+GraalVM is an exciting new platform and we're eager to adopt it. The startup time improvements over
+the JVM are particularly impressive. Try it with okcurl:
+ 
+```
+$ ./gradlew okcurl:nativeImage
+$ ./okcurl/build/graal/okcurl https://cash.app/robots.txt
+```
+
+This is our first release that supports GraalVM. Our code on this platform is less mature than JVM
+and Android! Please report any issues you encounter: we'll fix them urgently.
+
+ *  Fix: Attempt to read the response body even if the server canceled the request. This will cause
+    some calls to return nice error codes like `HTTP/1.1 429 Too Many Requests` instead of transport
+    errors like `SocketException: Connection reset` and `StreamResetException: stream was reset: 
+    CANCEL`.
+ *  New: Support OSGi metadata.
+ *  Upgrade: [Okio 2.9.0][okio_2_9_0].
+
+    ```kotlin
+    implementation("com.squareup.okio:okio:2.9.0")
+    ```
+
+
+
 ## Version 4.9.0
 
 _2020-09-11_
@@ -494,6 +524,7 @@ _2019-06-03_
  [bouncy_castle_releases]: https://www.bouncycastle.org/releasenotes.html
  [dev_server]: https://github.com/square/okhttp/blob/482f88300f78c3419b04379fc26c3683c10d6a9d/samples/guide/src/main/java/okhttp3/recipes/kt/DevServer.kt
  [fun_interface]: https://kotlinlang.org/docs/reference/fun-interfaces.html
+ [graalvm]: https://www.graalvm.org/
  [iana_websocket]: https://www.iana.org/assignments/websocket/websocket.txt
  [jetty_8_252]: https://webtide.com/jetty-alpn-java-8u252/
  [kotlin_1_3_71]: https://github.com/JetBrains/kotlin/releases/tag/v1.3.71
@@ -502,6 +533,7 @@ _2019-06-03_
  [okhttp4_blog_post]: https://cashapp.github.io/2019-06-26/okhttp-4-goes-kotlin
  [okio_2_6_0]: https://square.github.io/okio/changelog/#version-260
  [okio_2_7_0]: https://square.github.io/okio/changelog/#version-270
+ [okio_2_9_0]: https://square.github.io/okio/changelog/#version-290
  [public_suffix]: https://publicsuffix.org/
  [upgrading_to_okhttp_4]: https://square.github.io/okhttp/upgrading_to_okhttp_4/
  [rfc_2045]: https://tools.ietf.org/html/rfc2045

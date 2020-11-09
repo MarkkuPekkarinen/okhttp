@@ -22,25 +22,24 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
+import mockwebserver3.SocketPolicy;
+import mockwebserver3.internal.duplex.MockDuplexResponseBody;
 import okhttp3.internal.RecordingOkAuthenticator;
 import okhttp3.internal.duplex.AsyncRequestBody;
 import okhttp3.internal.duplex.MwsDuplexAccess;
 import okhttp3.internal.http2.ErrorCode;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-import okhttp3.mockwebserver.SocketPolicy;
-import okhttp3.mockwebserver.internal.duplex.MockDuplexResponseBody;
 import okhttp3.testing.PlatformRule;
 import okhttp3.tls.HandshakeCertificates;
 import okio.BufferedSink;
 import okio.BufferedSource;
 import org.jetbrains.annotations.Nullable;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TestRule;
-import org.junit.rules.Timeout;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static java.util.Arrays.asList;
 import static junit.framework.TestCase.assertTrue;
@@ -48,19 +47,20 @@ import static okhttp3.tls.internal.TlsUtil.localhost;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 
+@Timeout(30)
 public final class DuplexTest {
-  @Rule public final PlatformRule platform = new PlatformRule();
-  @Rule public final TestRule timeout = new Timeout(30_000, TimeUnit.MILLISECONDS);
-  @Rule public final MockWebServer server = new MockWebServer();
-  @Rule public OkHttpClientTestRule clientTestRule = new OkHttpClientTestRule();
+  @RegisterExtension public final PlatformRule platform = new PlatformRule();
+  @RegisterExtension public OkHttpClientTestRule clientTestRule = new OkHttpClientTestRule();
 
+  private MockWebServer server;
   private RecordingEventListener listener = new RecordingEventListener();
   private HandshakeCertificates handshakeCertificates = localhost();
   private OkHttpClient client = clientTestRule.newClientBuilder()
       .eventListenerFactory(clientTestRule.wrap(listener))
       .build();
 
-  @Before public void setUp() {
+  @BeforeEach public void setUp(MockWebServer server) {
+    this.server = server;
     platform.assumeNotOpenJSSE();
     platform.assumeHttp2Support();
     platform.assumeNotBouncyCastle();
@@ -521,7 +521,7 @@ public final class DuplexTest {
    * This test sends a slow request that is canceled by the server. It expects the response to still
    * be readable after the request stream is canceled.
    */
-  @Ignore
+  @Disabled
   @Test public void serverCancelsRequestBodyAndSendsResponseBody() throws Exception {
     client = client.newBuilder()
         .retryOnConnectionFailure(false)
