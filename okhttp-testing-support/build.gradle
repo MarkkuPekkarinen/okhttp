@@ -1,7 +1,5 @@
 dependencies {
   api project(':okhttp')
-  api deps.junit
-  api deps.junit5Api
   api deps.assertj
   api deps.bouncycastle
   implementation deps.bouncycastlepkix
@@ -9,11 +7,12 @@ dependencies {
   api deps.conscrypt
   api deps.corretto
   api deps.openjsse
-
+  api deps.hamcrest
   api deps.junit5Api
   api deps.junit5JupiterParams
   
   compileOnly deps.jsr305
+  compileOnly deps.android
 }
 
 animalsniffer {
