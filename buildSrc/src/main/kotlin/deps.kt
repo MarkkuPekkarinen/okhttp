@@ -21,7 +21,7 @@ object Versions {
   const val bouncycastle = "1.68"
   const val brotli = "0.1.2"
   const val checkstyle = "8.28"
-  const val conscrypt = "2.5.1"
+  const val conscrypt = "2.5.2"
   const val corretto = "1.3.1"
   const val equinox = "3.16.0"
   const val findbugs = "3.0.2"
@@ -33,7 +33,7 @@ object Versions {
   const val kotlin = "1.4.31"
   const val ktlint = "0.38.0"
   const val moshi = "1.11.0"
-  const val okio = "3.0.0-alpha.1"
+  const val okio = "3.0.0-alpha.4"
   const val openjsse = "1.1.0"
   const val picocli = "4.5.1"
 }

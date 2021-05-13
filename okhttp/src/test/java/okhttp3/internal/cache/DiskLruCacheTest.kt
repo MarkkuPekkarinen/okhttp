@@ -46,9 +46,9 @@ import java.util.NoSuchElementException
 @OptIn(ExperimentalFileSystem::class)
 class FilesystemParamProvider: SimpleProvider() {
   override fun arguments() = listOf(
-    FakeFileSystem() to false,
+    FakeFileSystem().apply { emulateUnix() } to false,
     FileSystem.SYSTEM to TestUtil.windows,
-    FakeFileSystem(windowsLimitations = true) to true
+    FakeFileSystem().apply { emulateWindows() } to true
   )
 }
 
@@ -96,6 +96,9 @@ class DiskLruCacheTest {
     while (!toClose.isEmpty()) {
       toClose.pop().close()
     }
+
+    // TODO uncomment after fixing up snapshot calls in this test
+    // (filesystem.delegate as? FakeFileSystem)?.checkNoOpenFiles()
   }
 
   @ParameterizedTest
