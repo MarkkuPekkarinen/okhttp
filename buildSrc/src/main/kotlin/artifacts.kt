@@ -19,17 +19,47 @@ import java.io.File
 import org.gradle.api.Project
 import org.gradle.api.plugins.ExtensionAware
 import org.gradle.api.tasks.SourceSetContainer
-import org.gradle.kotlin.dsl.apply
+import org.gradle.api.tasks.bundling.Jar
+import org.gradle.kotlin.dsl.dependencies
+import org.gradle.kotlin.dsl.findByType
 import org.gradle.kotlin.dsl.get
+import org.gradle.kotlin.dsl.getByName
 
 fun Project.applyOsgi(vararg bndProperties: String) {
-  apply(plugin = "biz.aQute.bnd.builder")
-  val osgi = sourceSets.create("osgi")
-  tasks["jar"].extensions.configure<BundleTaskExtension>(BundleTaskExtension.NAME) {
+  // Configure OSGi for the JVM platform on kotlin-multiplatform.
+  plugins.withId("org.jetbrains.kotlin.multiplatform") {
+    applyOsgi("jvmJar", "jvmOsgiApi", bndProperties)
+  }
+
+  // Configure OSGi for kotlin-jvm.
+  plugins.withId("org.jetbrains.kotlin.jvm") {
+    applyOsgi("jar", "osgiApi", bndProperties)
+  }
+}
+
+private fun Project.applyOsgi(
+  jarTaskName: String,
+  osgiApiConfigurationName: String,
+  bndProperties: Array<out String>
+) {
+  val osgi = project.sourceSets.create("osgi")
+  val osgiApi = project.configurations.getByName(osgiApiConfigurationName)
+  project.dependencies {
+    osgiApi(Dependencies.kotlinStdlibOsgi)
+  }
+
+  val jarTask = tasks.getByName<Jar>(jarTaskName)
+  val bundleExtension = jarTask.extensions.findByType() ?: jarTask.extensions.create(
+    BundleTaskExtension.NAME, BundleTaskExtension::class.java, jarTask
+  )
+  bundleExtension.run {
     setClasspath(osgi.compileClasspath + sourceSets["main"].compileClasspath)
     bnd(*bndProperties)
   }
-  dependencies.add("osgiApi", Dependencies.kotlinStdlibOsgi)
+  // Call the convention when the task has finished, to modify the jar to contain OSGi metadata.
+  jarTask.doLast {
+    bundleExtension.buildAction().execute(this)
+  }
 }
 
 /**
