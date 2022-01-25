@@ -1,7 +1,6 @@
 import com.android.build.gradle.internal.tasks.factory.dependsOn
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinMultiplatform
-import java.nio.charset.StandardCharsets
 import me.champeau.gradle.japicmp.JapicmpTask
 import org.jetbrains.kotlin.gradle.dsl.KotlinCompile
 
@@ -16,23 +15,49 @@ kotlin {
   jvm {
     withJava()
   }
+  if (kmpJsEnabled) {
+    js {
+      compilations.all {
+        kotlinOptions {
+          moduleKind = "umd"
+          sourceMap = true
+          metaInfo = true
+        }
+      }
+      nodejs {
+        testTask {
+          useMocha {
+            timeout = "30s"
+          }
+        }
+      }
+      browser {
+      }
+    }
+  }
 
   sourceSets {
     commonMain {
       kotlin.srcDir("$buildDir/generated/sources/kotlinTemplates")
       dependencies {
         api(Dependencies.okio)
+        api(Dependencies.assertk)
       }
     }
-    commonTest {
+    val commonTest by getting {
       dependencies {
         implementation(Dependencies.kotlinTest)
         implementation(Dependencies.kotlinTestAnnotations)
       }
     }
-    create("nonJvmMain") {
+    val nonJvmMain = create("nonJvmMain") {
       dependencies {
         dependsOn(sourceSets.commonMain.get())
+      }
+    }
+    val nonJvmTest = create("nonJvmTest") {
+      dependencies {
+        dependsOn(sourceSets.commonTest.get())
       }
     }
 
@@ -56,6 +81,7 @@ kotlin {
     }
     getByName("jvmTest") {
       dependencies {
+        dependsOn(commonTest)
         implementation(project(":okhttp-testing-support"))
         implementation(project(":okhttp-tls"))
         implementation(project(":okhttp-urlconnection"))
@@ -77,6 +103,21 @@ kotlin {
         implementation(Dependencies.openjsse)
         implementation(Dependencies.bndResolve)
         compileOnly(Dependencies.jsr305)
+      }
+
+      getByName("jsMain") {
+        dependencies {
+          dependsOn(nonJvmMain)
+          api(Dependencies.okio)
+          api(Dependencies.kotlinStdlib)
+        }
+      }
+
+      getByName("jsTest") {
+        dependencies {
+          dependsOn(nonJvmTest)
+          implementation(Dependencies.kotlinTestJs)
+        }
       }
     }
   }
@@ -211,7 +252,7 @@ val copyKotlinTemplates = tasks.register<Copy>("copyKotlinTemplates") {
   from("src/commonMain/kotlinTemplates")
   into("$buildDir/generated/sources/kotlinTemplates")
   expand("projectVersion" to project.version)
-  filteringCharset = StandardCharsets.UTF_8.toString()
+  filteringCharset = Charsets.UTF_8.toString()
 }
 tasks.withType<KotlinCompile<*>> {
   dependsOn(copyKotlinTemplates)
