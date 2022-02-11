@@ -82,17 +82,17 @@ kotlin {
     getByName("jvmTest") {
       dependencies {
         dependsOn(commonTest)
-        implementation(project(":okhttp-testing-support"))
-        implementation(project(":okhttp-tls"))
-        implementation(project(":okhttp-urlconnection"))
-        implementation(project(":mockwebserver3"))
-        implementation(project(":mockwebserver3-junit4"))
-        implementation(project(":mockwebserver3-junit5"))
-        implementation(project(":mockwebserver"))
-        implementation(project(":logging-interceptor"))
-        implementation(project(":okhttp-brotli"))
-        implementation(project(":okhttp-dnsoverhttps"))
-        implementation(project(":okhttp-sse"))
+        implementation(projects.okhttpTestingSupport)
+        implementation(projects.okhttpTls)
+        implementation(projects.okhttpUrlconnection)
+        implementation(projects.mockwebserver3)
+        implementation(projects.mockwebserver3Junit4)
+        implementation(projects.mockwebserver3Junit5)
+        implementation(projects.mockwebserver)
+        implementation(projects.loggingInterceptor)
+        implementation(projects.okhttpBrotli)
+        implementation(projects.okhttpDnsoverhttps)
+        implementation(projects.okhttpSse)
         implementation(Dependencies.okioFakeFileSystem)
         implementation(Dependencies.conscrypt)
         implementation(Dependencies.junit)
@@ -128,10 +128,13 @@ project.applyOsgi(
   "Import-Package: " +
     "android.*;resolution:=optional," +
     "com.oracle.svm.core.annotate;resolution:=optional," +
+    "com.oracle.svm.core.configure;resolution:=optional," +
     "dalvik.system;resolution:=optional," +
     "org.conscrypt;resolution:=optional," +
     "org.bouncycastle.*;resolution:=optional," +
     "org.openjsse.*;resolution:=optional," +
+    "org.graalvm.nativeimage;resolution:=optional," +
+    "org.graalvm.nativeimage.hosted;resolution:=optional," +
     "sun.security.ssl;resolution:=optional,*",
   "Automatic-Module-Name: okhttp3",
   "Bundle-SymbolicName: com.squareup.okhttp3"

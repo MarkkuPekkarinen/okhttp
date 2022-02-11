@@ -15,6 +15,7 @@
  */
 package okhttp3
 
+import java.io.Closeable
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.net.ProxySelector
@@ -30,6 +31,7 @@ import okhttp3.internal.concurrent.TaskRunner
 import okhttp3.internal.connection.RealCall
 import okhttp3.internal.connection.RealConnection
 import okhttp3.internal.connection.RealConnectionPool
+import okhttp3.internal.connection.RealRoutePlanner
 import okhttp3.internal.http.RealInterceptorChain
 import okhttp3.internal.http.RecordingProxySelector
 import okhttp3.tls.HandshakeCertificates
@@ -44,7 +46,7 @@ import okhttp3.tls.internal.TlsUtil.localhost
  * well-formed, but doesn't guarantee values are internally consistent. Callers must take care to
  * configure the factory when sample values impact the correctness of the test.
  */
-class TestValueFactory {
+class TestValueFactory : Closeable {
   var taskFaker: TaskFaker = TaskFaker()
   var taskRunner: TaskRunner = taskFaker.taskRunner
   var dns: Dns = Dns.SYSTEM
@@ -173,5 +175,17 @@ class TestValueFactory {
     return Request.Builder()
       .url(address.url)
       .build()
+  }
+
+  fun newRoutePlanner(
+    client: OkHttpClient,
+    address: Address = newAddress(),
+  ): RealRoutePlanner {
+    val call = RealCall(client, newRequest(address), forWebSocket = false)
+    return RealRoutePlanner(client, address, call, newChain(call))
+  }
+
+  override fun close() {
+    taskFaker.close()
   }
 }
