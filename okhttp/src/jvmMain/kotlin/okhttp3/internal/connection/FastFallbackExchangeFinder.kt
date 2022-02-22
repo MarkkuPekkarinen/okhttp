@@ -30,13 +30,23 @@ import okhttp3.internal.okHttpName
  * connects successfully. This kicks off new attempts every 250 ms until a connect succeeds.
  */
 internal class FastFallbackExchangeFinder(
-  private val routePlanner: RoutePlanner,
+  override val routePlanner: RoutePlanner,
   private val taskRunner: TaskRunner,
-) {
-  private val connectDelayMillis = 250L
+) : ExchangeFinder {
+  private val connectDelayNanos = TimeUnit.MILLISECONDS.toNanos(250L)
+  private var nextTcpConnectAtNanos = Long.MIN_VALUE
 
-  /** Plans currently being connected, and that will later be added to [connectResults]. */
-  private var connectsInFlight = CopyOnWriteArrayList<Plan>()
+  /**
+   * Plans currently being connected, and that will later be added to [connectResults]. This is
+   * mutated by the call thread only. If is accessed by background connect threads.
+   */
+  private val tcpConnectsInFlight = CopyOnWriteArrayList<Plan>()
+
+  /**
+   * These are retries of plans that were canceled when they lost a race. If the race's winner ends
+   * up not working out, this is what we'll attempt first.
+   */
+  private val deferredPlans = ArrayDeque<Plan>()
 
   /**
    * Results are posted here as they occur. The find job is done when either one plan completes
@@ -44,123 +54,127 @@ internal class FastFallbackExchangeFinder(
    */
   private val connectResults = taskRunner.backend.decorate(LinkedBlockingDeque<ConnectResult>())
 
-  /** Exceptions accumulate here. */
-  private var firstException: IOException? = null
-
-  /** True until we've launched all the connects we'll ever launch. */
-  private var morePlansExist = true
-
-  fun find(): RealConnection {
+  override fun find(): RealConnection {
+    var firstException: IOException? = null
     try {
-      while (morePlansExist || connectsInFlight.isNotEmpty()) {
+      while (tcpConnectsInFlight.isNotEmpty() ||
+        deferredPlans.isNotEmpty() ||
+        routePlanner.hasNext()
+      ) {
         if (routePlanner.isCanceled()) throw IOException("Canceled")
 
-        launchConnect()
+        // Launch a new connection if we're ready to.
+        val now = taskRunner.backend.nanoTime()
+        var awaitTimeoutNanos = nextTcpConnectAtNanos - now
+        if (tcpConnectsInFlight.isEmpty() || awaitTimeoutNanos <= 0) {
+          launchTcpConnect()
+          nextTcpConnectAtNanos = now + connectDelayNanos
+          awaitTimeoutNanos = connectDelayNanos
+        }
 
-        val connection = awaitConnection()
-        if (connection != null) return connection
+        // Wait for an in-flight connect to complete or fail.
+        var connectResult = awaitTcpConnect(awaitTimeoutNanos, TimeUnit.NANOSECONDS) ?: continue
 
-        morePlansExist = morePlansExist && routePlanner.hasMoreRoutes()
+        if (connectResult.isSuccess) {
+          // We have a connected TCP connection. Cancel and defer the racing connects that all lost.
+          cancelInFlightConnects()
+
+          // Finish connecting. We won't have to if the winner is from the connection pool.
+          if (!connectResult.plan.isReady) {
+            connectResult = connectResult.plan.connectTlsEtc()
+          }
+
+          if (connectResult.isSuccess) {
+            return connectResult.plan.handleSuccess()
+          }
+        }
+
+        val throwable = connectResult.throwable
+        if (throwable != null) {
+          if (throwable !is IOException) throw throwable
+          if (firstException == null) {
+            firstException = throwable
+          } else {
+            firstException.addSuppressed(throwable)
+          }
+        }
+
+        val nextPlan = connectResult.nextPlan
+        if (nextPlan != null) {
+          // Try this plan's successor before deferred plans because it won the race!
+          deferredPlans.addFirst(nextPlan)
+        }
       }
-
-      throw firstException!!
     } finally {
-      for (plan in connectsInFlight) {
-        plan.cancel()
-      }
+      cancelInFlightConnects()
     }
+
+    throw firstException!!
   }
 
-  private fun launchConnect() {
-    if (!morePlansExist) return
-
-    val plan = try {
-      routePlanner.plan()
-    } catch (e: IOException) {
-      trackFailure(e)
-      return
+  private fun launchTcpConnect() {
+    val plan = when {
+      deferredPlans.isNotEmpty() -> {
+        deferredPlans.removeFirst()
+      }
+      routePlanner.hasNext() -> {
+        try {
+          routePlanner.plan()
+        } catch (e: Throwable) {
+          FailedPlan(e)
+        }
+      }
+      else -> return // Nothing further to try.
     }
 
-    connectsInFlight += plan
+    tcpConnectsInFlight += plan
 
     // Already connected? Enqueue the result immediately.
-    if (plan.isConnected) {
+    if (plan.isReady) {
       connectResults.put(ConnectResult(plan))
       return
     }
 
-    // Connect asynchronously.
+    // Already failed? Enqueue the result immediately.
+    if (plan is FailedPlan) {
+      connectResults.put(plan.result)
+      return
+    }
+
+    // Connect TCP asynchronously.
     val taskName = "$okHttpName connect ${routePlanner.address.url.redact()}"
     taskRunner.newQueue().schedule(object : Task(taskName) {
       override fun runOnce(): Long {
         val connectResult = try {
-          connectAndDoRetries()
+          plan.connectTcp()
         } catch (e: Throwable) {
           ConnectResult(plan, throwable = e)
         }
-        connectResults.put(connectResult)
-        return -1L
-      }
-
-      private fun connectAndDoRetries(): ConnectResult {
-        var firstException: Throwable? = null
-        var currentPlan = plan
-        while (true) {
-          val tcpConnectResult = currentPlan.connectTcp()
-          val connectResult = when {
-            tcpConnectResult.isSuccess -> currentPlan.connectTlsEtc()
-            else -> tcpConnectResult
-          }
-
-          if (connectResult.throwable == null) {
-            if (connectResult.nextPlan == null) return connectResult // Success.
-          } else {
-            if (firstException == null) {
-              firstException = connectResult.throwable
-            } else {
-              firstException.addSuppressed(connectResult.throwable)
-            }
-
-            // Fail if there's no next plan, or if this failure exception is not recoverable.
-            if (connectResult.nextPlan == null || connectResult.throwable !is IOException) break
-          }
-
-          // Replace the currently-running plan with its successor.
-          connectsInFlight.add(connectResult.nextPlan)
-          connectsInFlight.remove(currentPlan)
-          currentPlan = connectResult.nextPlan
+        // Only post a result if this hasn't since been canceled.
+        if (plan in tcpConnectsInFlight) {
+          connectResults.put(connectResult)
         }
-
-        return ConnectResult(currentPlan, throwable = firstException)
+        return -1L
       }
     })
   }
 
-  private fun awaitConnection(): RealConnection? {
-    if (connectsInFlight.isEmpty()) return null
+  private fun awaitTcpConnect(timeout: Long, unit: TimeUnit): ConnectResult? {
+    if (tcpConnectsInFlight.isEmpty()) return null
 
-    val completed = connectResults.poll(connectDelayMillis, TimeUnit.MILLISECONDS) ?: return null
+    val result = connectResults.poll(timeout, unit) ?: return null
 
-    connectsInFlight.remove(completed.plan)
+    tcpConnectsInFlight.remove(result.plan)
 
-    val exception = completed.throwable
-    if (exception is IOException) {
-      trackFailure(exception)
-      return null
-    } else if (exception != null) {
-      throw exception
-    }
-
-    return completed.plan.handleSuccess()
+    return result
   }
 
-  private fun trackFailure(exception: IOException) {
-    routePlanner.trackFailure(exception)
-
-    if (firstException == null) {
-      firstException = exception
-    } else {
-      firstException!!.addSuppressed(exception)
+  private fun cancelInFlightConnects() {
+    for (plan in tcpConnectsInFlight) {
+      plan.cancel()
+      val retry = plan.retry() ?: continue
+      deferredPlans += retry
     }
+    tcpConnectsInFlight.clear()
   }
 }

@@ -10,12 +10,13 @@ dependencies {
   implementation(projects.okhttpTls)
   implementation(libs.animalsniffer.annotations)
   implementation(libs.squareup.moshi)
-  kapt(libs.moshiCompiler)
+  implementation(libs.squareup.okio.fakefilesystem)
+  kapt(libs.squareup.moshi.compiler)
 }
 
 java {
   toolchain {
-    languageVersion.set(JavaLanguageVersion.of(14))
+    languageVersion.set(JavaLanguageVersion.of(17))
   }
 }
 

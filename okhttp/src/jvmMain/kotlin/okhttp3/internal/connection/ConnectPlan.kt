@@ -74,6 +74,9 @@ class ConnectPlan(
 ) : RoutePlanner.Plan, ExchangeCodec.Carrier {
   private val eventListener = call.eventListener
 
+  /** True if this connect was canceled; typically because it lost a race. */
+  @Volatile private var canceled = false
+
   // These properties are initialized by connect() and never reassigned.
 
   /** The low-level TCP socket. */
@@ -90,7 +93,8 @@ class ConnectPlan(
   private var sink: BufferedSink? = null
   private var connection: RealConnection? = null
 
-  override val isConnected: Boolean
+  /** True if this connection is ready for use, including TCP, tunnels, and TLS. */
+  override val isReady: Boolean
     get() = protocol != null
 
   private fun copy(
@@ -137,7 +141,7 @@ class ConnectPlan(
 
   override fun connectTlsEtc(): ConnectResult {
     check(rawSocket != null) { "TCP not connected" }
-    check(!isConnected) { "already connected" }
+    check(!isReady) { "already connected" }
 
     val connectionSpecs = route.address.connectionSpecs
     var retryTlsConnection: ConnectPlan? = null
@@ -231,6 +235,11 @@ class ConnectPlan(
       else -> Socket(route.proxy)
     }
     this.rawSocket = rawSocket
+
+    // Handle the race where cancel() precedes connectSocket(). We don't want to miss a cancel.
+    if (canceled) {
+      throw IOException("canceled")
+    }
 
     rawSocket.soTimeout = client.readTimeoutMillis
     try {
@@ -483,8 +492,23 @@ class ConnectPlan(
   }
 
   override fun cancel() {
+    canceled = true
     // Close the raw socket so we don't end up doing synchronous I/O.
     rawSocket?.closeQuietly()
+  }
+
+  override fun retry(): RoutePlanner.Plan {
+    return ConnectPlan(
+      client = client,
+      call = call,
+      routePlanner = routePlanner,
+      route = route,
+      routes = routes,
+      attempt = attempt,
+      tunnelRequest = tunnelRequest,
+      connectionSpecIndex = connectionSpecIndex,
+      isTlsFallback = isTlsFallback,
+    )
   }
 
   fun closeQuietly() {

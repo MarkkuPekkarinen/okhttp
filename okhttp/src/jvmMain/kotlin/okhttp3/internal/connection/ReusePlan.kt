@@ -15,8 +15,20 @@
  */
 package okhttp3.internal.connection
 
-interface ExchangeFinder {
-  val routePlanner: RoutePlanner
+/** Reuse a connection from the pool. */
+internal class ReusePlan(
+  val connection: RealConnection,
+) : RoutePlanner.Plan {
 
-  fun find(): RealConnection
+  override val isReady = true
+
+  override fun connectTcp() = error("already connected")
+
+  override fun connectTlsEtc() = error("already connected")
+
+  override fun handleSuccess() = connection
+
+  override fun cancel() = error("unexpected cancel")
+
+  override fun retry() = error("unexpected retry")
 }

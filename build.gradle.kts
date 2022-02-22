@@ -3,23 +3,24 @@ import com.vanniktech.maven.publish.SonatypeHost
 import java.net.URL
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.dokka.gradle.DokkaTask
+import org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootPlugin
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import ru.vyarus.gradle.plugin.animalsniffer.AnimalSnifferExtension
 
 buildscript {
   dependencies {
-    classpath(libs.gradleplugin.dokka)
-    classpath(libs.gradleplugin.kotlin)
-    classpath(libs.gradleplugin.android.junit5)
-    classpath(libs.gradleplugin.android)
-    classpath(libs.gradleplugin.palantir.graal)
-    classpath(libs.gradleplugin.aqute.bnd)
-    classpath(libs.gradleplugin.johnrengelman.shadow)
-    classpath(libs.gradleplugin.japicmp)
-    classpath(libs.gradleplugin.animalsniffer)
-    classpath(libs.gradleplugin.errorprone)
-    classpath(libs.gradleplugin.spotless)
-    classpath(libs.gradleplugin.vanniktech)
+    classpath(libs.gradlePlugin.dokka)
+    classpath(libs.gradlePlugin.kotlin)
+    classpath(libs.gradlePlugin.androidJunit5)
+    classpath(libs.gradlePlugin.android)
+    classpath(libs.gradlePlugin.graal)
+    classpath(libs.gradlePlugin.bnd)
+    classpath(libs.gradlePlugin.shadow)
+    classpath(libs.gradlePlugin.japicmp)
+    classpath(libs.gradlePlugin.animalsniffer)
+    classpath(libs.gradlePlugin.errorprone)
+    classpath(libs.gradlePlugin.spotless)
+    classpath(libs.gradlePlugin.mavenPublish)
   }
 
   repositories {
@@ -33,7 +34,7 @@ apply(plugin = "com.vanniktech.maven.publish.base")
 
 allprojects {
   group = "com.squareup.okhttp3"
-  version = "5.0.0-SNAPSHOT"
+  version = "5.0.0-alpha.5"
 
   repositories {
     mavenCentral()
@@ -244,4 +245,10 @@ subprojects {
 
 tasks.wrapper {
   distributionType = Wrapper.DistributionType.ALL
+}
+
+// Fix until 1.6.20 https://youtrack.jetbrains.com/issue/KT-49109
+rootProject.plugins.withType(NodeJsRootPlugin::class.java) {
+  rootProject.the<org.jetbrains.kotlin.gradle.targets.js.nodejs.NodeJsRootExtension>().nodeVersion =
+    "16.13.0"
 }
