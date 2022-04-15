@@ -16,6 +16,7 @@
 package okhttp3
 
 import java.net.URL
+import kotlin.reflect.KClass
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.internal.canonicalUrl
 import okhttp3.internal.commonAddHeader
@@ -30,23 +31,62 @@ import okhttp3.internal.commonPatch
 import okhttp3.internal.commonPost
 import okhttp3.internal.commonPut
 import okhttp3.internal.commonRemoveHeader
-import okhttp3.internal.toImmutableMap
+import okhttp3.internal.commonTag
 
-actual class Request internal constructor(
-  @get:JvmName("url") actual val url: HttpUrl,
-  @get:JvmName("method") actual val method: String,
-  @get:JvmName("headers") actual val headers: Headers,
-  @get:JvmName("body") actual val body: RequestBody?,
-  internal val tags: Map<Class<*>, Any>
-) {
+actual class Request internal actual constructor(builder: Builder) {
+  @get:JvmName("url")
+  actual val url: HttpUrl = checkNotNull(builder.url) { "url == null" }
+
+  @get:JvmName("method")
+  actual val method: String = builder.method
+
+  @get:JvmName("headers")
+  actual val headers: Headers = builder.headers.build()
+
+  @get:JvmName("body")
+  actual val body: RequestBody? = builder.body
+
+  internal actual val tags: Map<KClass<*>, Any> = builder.tags.toMap()
+
   internal actual var lazyCacheControl: CacheControl? = null
 
   actual val isHttps: Boolean
     get() = url.isHttps
 
+  /**
+   * Constructs a new request.
+   *
+   * Use [Builder] for more fluent construction, including helper methods for various HTTP methods.
+   *
+   * @param method defaults to "GET" if [body] is null, and "POST" otherwise.
+   */
+  constructor(
+    url: HttpUrl,
+    headers: Headers = Headers.headersOf(),
+    method: String = "\u0000", // Sentinel value chooses based on what the body is.
+    body: RequestBody? = null,
+  ) : this(
+    Builder()
+      .url(url)
+      .headers(headers)
+      .method(
+        when {
+          method != "\u0000" -> method
+          body != null -> "POST"
+          else -> "GET"
+        },
+        body
+      )
+  )
+
   actual fun header(name: String): String? = commonHeader(name)
 
   actual fun headers(name: String): List<String> = commonHeaders(name)
+
+  @JvmName("reifiedTag")
+  actual inline fun <reified T : Any> tag(): T? = tag(T::class)
+
+  actual fun <T : Any> tag(type: KClass<T>): T? = type.java.cast(tags[type])
 
   /**
    * Returns the tag attached with `Object.class` as a key, or null if no tag is attached with
@@ -56,13 +96,13 @@ actual class Request internal constructor(
    * returned either this request, or the request upon which this request was derived with
    * [newBuilder].
    */
-  fun tag(): Any? = tag(Any::class.java)
+  fun tag(): Any? = tag<Any>()
 
   /**
    * Returns the tag attached with [type] as a key, or null if no tag is attached with that
    * key.
    */
-  fun <T> tag(type: Class<out T>): T? = type.cast(tags[type])
+  fun <T> tag(type: Class<out T>): T? = tag(type.kotlin)
 
   actual fun newBuilder(): Builder = Builder(this)
 
@@ -140,9 +180,7 @@ actual class Request internal constructor(
     internal actual var method: String
     internal actual var headers: Headers.Builder
     internal actual var body: RequestBody? = null
-
-    /** A mutable map of tags, or an immutable empty map if we don't have any. */
-    internal var tags: MutableMap<Class<*>, Any> = mutableMapOf()
+    internal actual var tags = mapOf<KClass<*>, Any>()
 
     actual constructor() {
       this.method = "GET"
@@ -153,10 +191,9 @@ actual class Request internal constructor(
       this.url = request.url
       this.method = request.method
       this.body = request.body
-      this.tags = if (request.tags.isEmpty()) {
-        mutableMapOf()
-      } else {
-        request.tags.toMutableMap()
+      this.tags = when {
+        request.tags.isEmpty() -> mapOf()
+        else -> request.tags.toMutableMap()
       }
       this.headers = request.headers.newBuilder()
     }
@@ -201,8 +238,13 @@ actual class Request internal constructor(
 
     actual open fun method(method: String, body: RequestBody?): Builder = commonMethod(method, body)
 
+    @JvmName("reifiedTag")
+    actual inline fun <reified T : Any> tag(tag: T?): Builder = tag(T::class, tag)
+
+    actual fun <T : Any> tag(type: KClass<T>, tag: T?): Builder = commonTag(type, tag)
+
     /** Attaches [tag] to the request using `Object.class` as a key. */
-    open fun tag(tag: Any?): Builder = tag(Any::class.java, tag)
+    open fun tag(tag: Any?): Builder = commonTag(Any::class, tag)
 
     /**
      * Attaches [tag] to the request using [type] as a key. Tags can be read from a
@@ -211,25 +253,8 @@ actual class Request internal constructor(
      * Use this API to attach timing, debugging, or other application data to a request so that
      * you may read it in interceptors, event listeners, or callbacks.
      */
-    open fun <T> tag(type: Class<in T>, tag: T?) = apply {
-      if (tag == null) {
-        tags.remove(type)
-      } else {
-        if (tags.isEmpty()) {
-          tags = mutableMapOf()
-        }
-        tags[type] = type.cast(tag)!! // Force-unwrap due to lack of contracts on Class#cast()
-      }
-    }
+    open fun <T> tag(type: Class<in T>, tag: T?) = commonTag(type.kotlin, tag)
 
-    actual open fun build(): Request {
-      return Request(
-          checkNotNull(url) { "url == null" },
-          method,
-          headers.build(),
-          body,
-          tags.toImmutableMap()
-      )
-    }
+    actual open fun build() = Request(this)
   }
 }
