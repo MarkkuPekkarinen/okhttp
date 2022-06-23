@@ -1,6 +1,52 @@
 Change Log
 ==========
 
+## Version 5.0.0-alpha.9
+
+_2022-06-16_
+
+ *  New: Enforce label length limits in URLs. `HttpUrl` now rejects URLs whose domains aren't valid.
+    This includes overly-long domain names (longer than 253 characters), overly-long labels (more
+    than 63 characters between dots), and empty labels.
+ *  New: Don't include the `Content-Length` header in multipart bodies. Servers must delimit
+    OkHttp's request bodies using the boundary only. (This change makes OkHttp more consistent with
+    browsers and other HTTP clients.)
+ *  New: Drop the `tunnelProxy` argument in `MockWebServer.useHttps()`. This change only impacts
+    the OkHttp 5.x API which uses the `mockwebserver3` package.
+ *  Fix: Don't call `toDuration()` which isn't available in kotlin-stdlib 1.4.
+
+
+## Version 5.0.0-alpha.8
+
+_2022-06-08_
+
+ *  Fix: Change how `H2_PRIOR_KNOWLEDGE` works with HTTP proxies. Previously OkHttp assumed the
+    proxy itself was a prior knowledge HTTP/2 server. With this update, OkHttp attempts a `CONNECT`
+    tunnel just as it would with HTTPS. For prior knowledge with proxies OkHttp's is now consistent
+    with these curl arguments:
+
+    ```
+    curl \
+      --http2-prior-knowledge \
+      --proxy localhost:8888 \
+      --proxytunnel \
+      http://squareup.com/robots.txt
+    ```
+
+ *  Fix: Support executing OkHttp on kotlin-stdlib versions as old as 1.4. The library still builds
+    on up-to-date Kotlin releases (1.6.21) but no longer needs that version as a runtime dependency.
+    This should make it easier to use OkHttp in Gradle plugins.
+
+ *  Fix: Don't start the clock on response timeouts until the request body is fully transmitted.
+    This is only relevant for duplex request bodies, because they are written concurrently when
+    reading the response body.
+
+ *  New: `MockResponse.inTunnel()` is a new `mockwebserver3` API to configure responses that are
+    served while creating a proxy tunnel. This obsoletes both the `tunnelProxy` argument on
+    `MockWebServer` and the `UPGRADE_TO_SSL_AT_END` socket option. (Only APIs on `mockwebserver3`
+    are changed; the old `okhttp3.mockwebserver` APIs remain as they always have been.
+
+
 ## Version 5.0.0-alpha.7
 
 _2022-04-26_

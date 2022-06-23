@@ -13,14 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package okhttp3
 
-package okhttp3.internal
+import assertk.assertThat
+import assertk.assertions.isEqualTo
+import kotlin.test.Test
+import okhttp3.RequestBody.Companion.toRequestBody
 
-import kotlin.text.lowercase as kotlinLowerCase
-import kotlin.text.uppercase as kotlinUpperCase
+class CommonRequestBodyTest {
+  @Test
+  fun correctContentType() {
+    val body = "Body"
+    val requestBody = body.toRequestBody(MediaType("text/plain", "text", "plain", arrayOf()))
 
-actual typealias HttpUrlRepresentation = String
+    val contentType = requestBody.contentType()!!
 
-actual inline fun String.lowercase() = this.kotlinLowerCase()
-
-actual inline fun String.uppercase() = this.kotlinUpperCase()
+    assertThat(contentType.mediaType).isEqualTo("text/plain; charset=utf-8")
+    assertThat(contentType.parameter("charset")).isEqualTo("utf-8")
+  }
+}
