@@ -1,8 +1,8 @@
 [versions]
 biz-aQute-bnd = "6.3.1"
-checkStyle = "10.3"
+checkStyle = "10.3.1"
 com-squareup-moshi = "1.13.0"
-com-squareup-okio = "3.1.0"
+com-squareup-okio = "3.2.0"
 de-mannodermaus-junit5 = "1.3.0"
 graalvm = "22.0.0.2"
 org-bouncycastle = "1.71"
@@ -33,7 +33,7 @@ conscrypt-openjdk = { module = "org.conscrypt:conscrypt-openjdk-uber", version.r
 eclipseOsgi = "org.eclipse.platform:org.eclipse.osgi:3.18.0"
 findbugs-jsr305 = "com.google.code.findbugs:jsr305:3.0.2"
 gradlePlugin-android = "com.android.tools.build:gradle:7.0.4"
-gradlePlugin-androidJunit5 = "de.mannodermaus.gradle.plugins:android-junit5:1.8.2.0"
+gradlePlugin-androidJunit5 = "de.mannodermaus.gradle.plugins:android-junit5:1.8.2.1"
 gradlePlugin-animalsniffer = "ru.vyarus:gradle-animalsniffer-plugin:1.5.4"
 gradlePlugin-binaryCompatibilityValidator = "org.jetbrains.kotlinx.binary-compatibility-validator:org.jetbrains.kotlinx.binary-compatibility-validator.gradle.plugin:0.10.1"
 gradlePlugin-bnd = { module = "biz.aQute.bnd:biz.aQute.bnd.gradle", version.ref = "biz-aQute-bnd" }
@@ -43,13 +43,13 @@ gradlePlugin-graal = "gradle.plugin.com.palantir.graal:gradle-graal:0.10.0"
 gradlePlugin-kotlin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "org-jetbrains-kotlin" }
 gradlePlugin-mavenPublish = "com.vanniktech:gradle-maven-publish-plugin:0.20.0"
 gradlePlugin-shadow = "gradle.plugin.com.github.johnrengelman:shadow:7.1.2"
-gradlePlugin-spotless = "com.diffplug.spotless:spotless-plugin-gradle:6.7.2"
+gradlePlugin-spotless = "com.diffplug.spotless:spotless-plugin-gradle:6.8.0"
 guava-jre = "com.google.guava:guava:31.1-jre"
 hamcrestLibrary = "org.hamcrest:hamcrest-library:2.2"
 httpClient5 = "org.apache.httpcomponents.client5:httpclient5:5.1.3"
 jettyClient = "org.eclipse.jetty:jetty-client:11.0.11"
 jnr-unixsocket = "com.github.jnr:jnr-unixsocket:0.38.17"
-jsoup = "org.jsoup:jsoup:1.15.1"
+jsoup = "org.jsoup:jsoup:1.15.2"
 junit = "junit:junit:4.13.2"
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "org-junit-jupiter" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "org-junit-jupiter" }
