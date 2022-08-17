@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Square, Inc.
+ * Copyright (C) 2022 Square, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,22 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package mockwebserver3.junit5.internal
+package okhttp3
 
+import java.io.IOException
 import mockwebserver3.MockWebServer
-import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-class InjectedConstructorTest(
-  private val server: MockWebServer
-) {
+class DispatcherCleanupTest {
   @Test
-  fun testOne() {
-    assertThat(server.started).isTrue()
-  }
-
-  @Test
-  fun testTwo() {
-    assertThat(server.started).isTrue()
+  fun testFinish(server: MockWebServer) {
+    val okhttp = OkHttpClient()
+    val callback = object : Callback {
+      override fun onFailure(call: Call, e: IOException) {}
+      override fun onResponse(call: Call, response: Response) {
+        response.close()
+      }
+    }
+    repeat(10_000) {
+      okhttp.newCall(Request.Builder().url(server.url("/")).build()).enqueue(callback)
+    }
+    okhttp.dispatcher.executorService.shutdown()
   }
 }

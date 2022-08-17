@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2020 Square, Inc.
+ * Copyright (C) 2014 Square, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,20 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package mockwebserver3.junit5.internal
+package okhttp3.curl
 
-import mockwebserver3.MockWebServer
-import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
 
-class InjectedParameterTest {
+class OkcurlTest {
   @Test
-  fun testOne(server: MockWebServer) {
-    assertThat(server.started).isTrue()
-  }
-
-  @Test
-  fun testTwo(server: MockWebServer) {
-    assertThat(server.started).isTrue()
+  fun simple() {
+    Main().main(listOf("--help"))
   }
 }
