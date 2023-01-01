@@ -16,7 +16,7 @@
 package okhttp3.internal.duplex
 
 import mockwebserver3.MockResponse
-import mockwebserver3.internal.duplex.DuplexResponseBody
+import mockwebserver3.StreamHandler
 
 /**
  * Internal access to MockWebServer APIs. Don't use this, don't use internal, these APIs are not
@@ -24,7 +24,10 @@ import mockwebserver3.internal.duplex.DuplexResponseBody
  */
 abstract class MwsDuplexAccess {
 
-  abstract fun setBody(mockResponse: MockResponse, duplexResponseBody: DuplexResponseBody)
+  abstract fun setBody(
+    mockResponseBuilder: MockResponse.Builder,
+    duplexResponseBody: StreamHandler,
+  )
 
   companion object {
     @JvmField var instance: MwsDuplexAccess? = null

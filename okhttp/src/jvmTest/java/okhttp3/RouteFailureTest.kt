@@ -24,7 +24,6 @@ import mockwebserver3.SocketPolicy
 import mockwebserver3.junit5.internal.MockWebServerInstance
 import okhttp3.internal.http2.ErrorCode
 import okhttp3.testing.PlatformRule
-import okhttp3.tls.internal.TlsUtil.localhost
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -45,17 +44,18 @@ class RouteFailureTest {
 
   private var listener = RecordingEventListener()
 
-  private val handshakeCertificates = localhost()
+  private val handshakeCertificates = platform.localhostHandshakeCertificates()
 
   val dns = FakeDns()
 
   val ipv4 = InetAddress.getByName("203.0.113.1")
   val ipv6 = InetAddress.getByName("2001:db8:ffff:ffff:ffff:ffff:ffff:1")
 
-  val refusedStream = MockResponse()
-    .setHttp2ErrorCode(ErrorCode.REFUSED_STREAM.httpCode)
-    .setSocketPolicy(SocketPolicy.RESET_STREAM_AT_START)
-  val bodyResponse = MockResponse().setBody("body")
+  val refusedStream = MockResponse(
+    socketPolicy = SocketPolicy.RESET_STREAM_AT_START,
+    http2ErrorCode = ErrorCode.REFUSED_STREAM.httpCode,
+  )
+  val bodyResponse = MockResponse(body = "body")
 
   @BeforeEach
   fun setUp(
@@ -100,6 +100,13 @@ class RouteFailureTest {
     assertThat(client.routeDatabase.failedRoutes).isEmpty()
     assertThat(server1.requestCount).isEqualTo(1)
     assertThat(server2.requestCount).isEqualTo(0)
+
+    assertThat(clientTestRule.recordedConnectionEventTypes()).containsExactly(
+      "ConnectStart",
+      "ConnectEnd",
+      "ConnectionAcquired",
+      "ConnectionReleased"
+    )
   }
 
   @Test
@@ -130,6 +137,19 @@ class RouteFailureTest {
     // TODO check if we expect a second request to server1, before attempting server2
     assertThat(server1.requestCount).isEqualTo(2)
     assertThat(server2.requestCount).isEqualTo(1)
+
+    assertThat(clientTestRule.recordedConnectionEventTypes()).containsExactly(
+      "ConnectStart",
+      "ConnectEnd",
+      "ConnectionAcquired",
+      "NoNewExchanges",
+      "ConnectionReleased",
+      "ConnectionClosed",
+      "ConnectStart",
+      "ConnectEnd",
+      "ConnectionAcquired",
+      "ConnectionReleased",
+    )
   }
 
   @Test
@@ -158,6 +178,13 @@ class RouteFailureTest {
     assertThat(client.routeDatabase.failedRoutes).isEmpty()
     assertThat(server1.requestCount).isEqualTo(1)
     assertThat(server2.requestCount).isEqualTo(0)
+
+    assertThat(clientTestRule.recordedConnectionEventTypes()).containsExactly(
+      "ConnectStart",
+      "ConnectEnd",
+      "ConnectionAcquired",
+      "ConnectionReleased"
+    )
   }
 
   @Test
@@ -188,6 +215,19 @@ class RouteFailureTest {
     // TODO check if we expect a second request to server1, before attempting server2
     assertThat(server1.requestCount).isEqualTo(2)
     assertThat(server2.requestCount).isEqualTo(1)
+
+    assertThat(clientTestRule.recordedConnectionEventTypes()).containsExactly(
+      "ConnectStart",
+      "ConnectEnd",
+      "ConnectionAcquired",
+      "NoNewExchanges",
+      "ConnectionReleased",
+      "ConnectionClosed",
+      "ConnectStart",
+      "ConnectEnd",
+      "ConnectionAcquired",
+      "ConnectionReleased"
+    )
   }
 
   @Test
@@ -214,6 +254,13 @@ class RouteFailureTest {
 
     assertThat(client.routeDatabase.failedRoutes).isEmpty()
     assertThat(server1.requestCount).isEqualTo(1)
+
+    assertThat(clientTestRule.recordedConnectionEventTypes()).containsExactly(
+      "ConnectStart",
+      "ConnectEnd",
+      "ConnectionAcquired",
+      "ConnectionReleased"
+    )
   }
 
   @Test
@@ -240,6 +287,13 @@ class RouteFailureTest {
 
     assertThat(client.routeDatabase.failedRoutes).isEmpty()
     assertThat(server1.requestCount).isEqualTo(1)
+
+    assertThat(clientTestRule.recordedConnectionEventTypes()).containsExactly(
+      "ConnectStart",
+      "ConnectEnd",
+      "ConnectionAcquired",
+      "ConnectionReleased"
+    )
   }
 
   private fun enableProtocol(protocol: Protocol) {
