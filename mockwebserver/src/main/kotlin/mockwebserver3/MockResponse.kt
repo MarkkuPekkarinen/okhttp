@@ -16,6 +16,7 @@
 package mockwebserver3
 
 import java.util.concurrent.TimeUnit
+import mockwebserver3.SocketPolicy.KeepOpen
 import mockwebserver3.internal.toMockResponseBody
 import okhttp3.Headers
 import okhttp3.Headers.Companion.headersOf
@@ -60,13 +61,6 @@ class MockResponse {
 
   val socketPolicy: SocketPolicy
 
-  /**
-   * Sets the [HTTP/2 error code](https://tools.ietf.org/html/rfc7540#section-7) to be
-   * returned when resetting the stream. This is only valid with
-   * [SocketPolicy.RESET_STREAM_AT_START] and [SocketPolicy.DO_NOT_READ_REQUEST_BODY].
-   */
-  val http2ErrorCode: Int
-
   val bodyDelayNanos: Long
   val headersDelayNanos: Long
 
@@ -80,8 +74,7 @@ class MockResponse {
     headers: Headers = headersOf(),
     body: String = "",
     inTunnel: Boolean = false,
-    socketPolicy: SocketPolicy = SocketPolicy.KEEP_OPEN,
-    http2ErrorCode: Int = -1,
+    socketPolicy: SocketPolicy = KeepOpen,
   ) : this(Builder()
     .apply {
       this.code = code
@@ -89,7 +82,6 @@ class MockResponse {
       if (inTunnel) inTunnel()
       this.body(body)
       this.socketPolicy = socketPolicy
-      this.http2ErrorCode = http2ErrorCode
     }
   )
 
@@ -105,7 +97,6 @@ class MockResponse {
     this.throttleBytesPerPeriod = builder.throttleBytesPerPeriod
     this.throttlePeriodNanos = builder.throttlePeriodNanos
     this.socketPolicy = builder.socketPolicy
-    this.http2ErrorCode = builder.http2ErrorCode
     this.bodyDelayNanos = builder.bodyDelayNanos
     this.headersDelayNanos = builder.headersDelayNanos
     this.pushPromises = builder.pushPromises.toList()
@@ -180,8 +171,6 @@ class MockResponse {
 
     var socketPolicy: SocketPolicy
 
-    var http2ErrorCode: Int
-
     internal var bodyDelayNanos: Long
 
     internal var headersDelayNanos: Long
@@ -203,8 +192,7 @@ class MockResponse {
       this.trailers = Headers.Builder()
       this.throttleBytesPerPeriod = Long.MAX_VALUE
       this.throttlePeriodNanos = 0L
-      this.socketPolicy = SocketPolicy.KEEP_OPEN
-      this.http2ErrorCode = -1
+      this.socketPolicy = KeepOpen
       this.bodyDelayNanos = 0L
       this.headersDelayNanos = 0L
       this.pushPromises = mutableListOf()
@@ -223,7 +211,6 @@ class MockResponse {
       this.throttleBytesPerPeriod = mockResponse.throttleBytesPerPeriod
       this.throttlePeriodNanos = mockResponse.throttlePeriodNanos
       this.socketPolicy = mockResponse.socketPolicy
-      this.http2ErrorCode = mockResponse.http2ErrorCode
       this.bodyDelayNanos = mockResponse.bodyDelayNanos
       this.headersDelayNanos = mockResponse.headersDelayNanos
       this.pushPromises = mockResponse.pushPromises.toMutableList()
@@ -338,11 +325,6 @@ class MockResponse {
     /** Sets the socket policy and returns this. */
     fun socketPolicy(socketPolicy: SocketPolicy) = apply {
       this.socketPolicy = socketPolicy
-    }
-
-    /** Sets the HTTP/2 error code and returns this. */
-    fun http2ErrorCode(http2ErrorCode: Int) = apply {
-      this.http2ErrorCode = http2ErrorCode
     }
 
     /**

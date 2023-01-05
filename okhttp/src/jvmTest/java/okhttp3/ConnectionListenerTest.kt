@@ -23,7 +23,7 @@ import java.util.Arrays
 import java.util.concurrent.TimeUnit
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
-import mockwebserver3.SocketPolicy
+import mockwebserver3.SocketPolicy.FailHandshake
 import okhttp3.Headers.Companion.headersOf
 import okhttp3.internal.DoubleInetAddressDns
 import okhttp3.internal.connection.RealConnectionPool.Companion.get
@@ -135,20 +135,22 @@ open class ConnectionListenerTest {
   @Test
   @Throws(IOException::class)
   fun secondCallEventSequence() {
-    enableTlsWithTunnel()
-    server!!.protocols = Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1)
+    enableTls()
+    server!!.protocols = listOf(Protocol.HTTP_2, Protocol.HTTP_1_1)
     server!!.enqueue(MockResponse())
     server!!.enqueue(MockResponse())
-    client.newCall(Request.Builder()
-      .url(server!!.url("/"))
-      .build()).execute().close()
-    listener.removeUpToEvent(ConnectionEvent.ConnectionReleased::class.java)
-    val call = client.newCall(Request.Builder()
-      .url(server!!.url("/"))
-      .build())
-    val response = call.execute()
-    response.close()
+
+    client.newCall(Request(server!!.url("/")))
+      .execute().close()
+
+    client.newCall(Request(server!!.url("/")))
+      .execute().close()
+
     assertThat(listener.recordedEventTypes()).containsExactly(
+      "ConnectStart",
+      "ConnectEnd",
+      "ConnectionAcquired",
+      "ConnectionReleased",
       "ConnectionAcquired",
       "ConnectionReleased"
     )
@@ -157,7 +159,7 @@ open class ConnectionListenerTest {
   @Test
   @Throws(IOException::class)
   fun successfulEmptyH2CallEventSequence() {
-    enableTlsWithTunnel()
+    enableTls()
     server!!.protocols = Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1)
     server!!.enqueue(MockResponse())
     assertSuccessfulEventOrder()
@@ -208,8 +210,8 @@ open class ConnectionListenerTest {
   @Test
   @Throws(UnknownHostException::class)
   fun failedConnect() {
-    enableTlsWithTunnel()
-    server!!.enqueue(MockResponse(socketPolicy = SocketPolicy.FAIL_HANDSHAKE))
+    enableTls()
+    server!!.enqueue(MockResponse(socketPolicy = FailHandshake))
     val call = client.newCall(Request.Builder()
       .url(server!!.url("/"))
       .build())
@@ -222,14 +224,18 @@ open class ConnectionListenerTest {
     val expectedAddress = InetSocketAddress(address, server!!.port)
     val event = listener.removeUpToEvent(ConnectionEvent.ConnectFailed::class.java)
     assertThat(event.route.socketAddress).isEqualTo(expectedAddress)
-    assertThat(event.exception).hasMessage("Unexpected handshake message: client_hello")
+
+    // Read error: ssl=0x7fd1d8d0fee8: Failure in SSL library, usually a protocol error
+    if (!platform.isConscrypt()) {
+      assertThat(event.exception).hasMessage("Unexpected handshake message: client_hello")
+    }
   }
 
   @Test
   @Throws(IOException::class)
   fun multipleConnectsForSingleCall() {
-    enableTlsWithTunnel()
-    server!!.enqueue(MockResponse(socketPolicy = SocketPolicy.FAIL_HANDSHAKE))
+    enableTls()
+    server!!.enqueue(MockResponse(socketPolicy = FailHandshake))
     server!!.enqueue(MockResponse())
     client = client.newBuilder()
       .dns(DoubleInetAddressDns())
@@ -273,7 +279,7 @@ open class ConnectionListenerTest {
     assertThat(event.connection.route().proxy).isEqualTo(proxy)
   }
 
-  private fun enableTlsWithTunnel() {
+  private fun enableTls() {
     client = client.newBuilder()
       .sslSocketFactory(
         handshakeCertificates.sslSocketFactory(), handshakeCertificates.trustManager)
