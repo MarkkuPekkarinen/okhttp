@@ -9,7 +9,7 @@ org-bouncycastle = "1.72"
 org-conscrypt = "2.5.2"
 org-jetbrains-coroutines = "1.6.4"
 org-jetbrains-kotlin = "1.8.10"
-org-junit-jupiter = "5.9.2"
+org-junit-jupiter = "5.9.3"
 
 [libraries]
 amazonCorretto = "software.amazon.cryptools:AmazonCorrettoCryptoProvider:2.0.0"
@@ -35,7 +35,7 @@ findbugs-jsr305 = "com.google.code.findbugs:jsr305:3.0.2"
 gradlePlugin-android = "com.android.tools.build:gradle:7.3.1"
 gradlePlugin-androidJunit5 = "de.mannodermaus.gradle.plugins:android-junit5:1.8.2.1"
 gradlePlugin-animalsniffer = "ru.vyarus:gradle-animalsniffer-plugin:1.7.0"
-gradlePlugin-binaryCompatibilityValidator = "org.jetbrains.kotlinx.binary-compatibility-validator:org.jetbrains.kotlinx.binary-compatibility-validator.gradle.plugin:0.13.0"
+gradlePlugin-binaryCompatibilityValidator = "org.jetbrains.kotlinx.binary-compatibility-validator:org.jetbrains.kotlinx.binary-compatibility-validator.gradle.plugin:0.13.1"
 gradlePlugin-bnd = { module = "biz.aQute.bnd:biz.aQute.bnd.gradle", version.ref = "biz-aQute-bnd" }
 gradlePlugin-dokka = "org.jetbrains.dokka:dokka-gradle-plugin:1.8.10"
 gradlePlugin-errorprone = "net.ltgt.gradle:gradle-errorprone-plugin:3.0.1"
@@ -54,8 +54,8 @@ junit = "junit:junit:4.13.2"
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "org-junit-jupiter" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "org-junit-jupiter" }
 junit-jupiter-params = { module = "org.junit.jupiter:junit-jupiter-params", version.ref = "org-junit-jupiter" }
-junit-platform-console = "org.junit.platform:junit-platform-console:1.9.2"
-junit-vintage-engine = "org.junit.vintage:junit-vintage-engine:5.9.2"
+junit-platform-console = "org.junit.platform:junit-platform-console:1.9.3"
+junit-vintage-engine = "org.junit.vintage:junit-vintage-engine:5.9.3"
 junit-pioneer = "org.junit-pioneer:junit-pioneer:1.9.1"
 junit5android-core = { module = "de.mannodermaus.junit5:android-test-core", version.ref = "de-mannodermaus-junit5" }
 junit5android-runner = { module = "de.mannodermaus.junit5:android-test-runner", version.ref = "de-mannodermaus-junit5" }
@@ -70,7 +70,7 @@ kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "org-jetbrains-coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "org-jetbrains-coroutines" }
 nativeImageSvm = { module = "org.graalvm.nativeimage:svm", version.ref = "graalvm" }
-openjsse = "org.openjsse:openjsse:1.1.11"
+openjsse = "org.openjsse:openjsse:1.1.12"
 playservices-safetynet = "com.google.android.gms:play-services-safetynet:18.0.1"
 robolectric-android = "org.robolectric:android-all:13-robolectric-9030017"
 signature-android-apilevel21 = "net.sf.androidscents.signature:android-api-level-21:5.0.1_r2"
