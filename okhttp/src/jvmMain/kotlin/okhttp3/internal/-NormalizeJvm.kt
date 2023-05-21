@@ -15,8 +15,8 @@
  */
 package okhttp3.internal
 
-import java.net.IDN
-import java.util.Locale
+import java.text.Normalizer
+import java.text.Normalizer.Form.NFC
 
-internal actual fun idnToAscii(host: String): String =
-  IDN.toASCII(host).lowercase(Locale.US)
+internal actual fun normalizeNfc(string: String): String =
+  Normalizer.normalize(string, NFC)

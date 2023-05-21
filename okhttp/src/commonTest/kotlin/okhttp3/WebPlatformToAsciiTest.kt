@@ -17,10 +17,8 @@ package okhttp3
 
 import assertk.assertThat
 import assertk.assertions.isEqualTo
-import assertk.assertions.isNotNull
+import kotlin.test.Test
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import org.junit.jupiter.api.DynamicTest
-import org.junit.jupiter.api.TestFactory
 
 /** Runs the web platform ToAscii tests. */
 class WebPlatformToAsciiTest {
@@ -40,20 +38,11 @@ class WebPlatformToAsciiTest {
     "01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.0123456789012345678901234567890123456789012345678.xn--zca",
     "01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.01234567890123456789012345678901234567890123456789.0123456789012345678901234567890123456789012345678.ß",
 
-    // OkHttp incorrectly does transitional processing, so it maps 'ß' to 'ss'
-    "-x.ß",
-    "ab--c.ß",
-    "x-.ß",
-    "xn--a.ß",
-    "xn--zca.ß",
-    "ශ්‍රී",
-
     // OkHttp does not reject invalid Punycode.
-    "xn--",
     "xn--a",
+    "xn--a.ß",
     "xn--a.xn--zca",
     "xn--a-yoc",
-    "xn--ls8h=",
 
     // OkHttp doesn't reject U+FFFD encoded in Punycode.
     "xn--zn7c.com",
@@ -61,28 +50,37 @@ class WebPlatformToAsciiTest {
     // OkHttp doesn't reject a U+200D. https://www.rfc-editor.org/rfc/rfc5892.html#appendix-A.2
     "xn--1ug.example",
 
-    // OkHttp returns `xn--mgba3gch31f`, not `xn--mgba3gch31f060k`.
-    "نامه‌ای",
+    // OkHttp doesn't implement CheckJoiners.
+    "\u200D.example",
+
+    // OkHttp doesn't implement CheckBidi.
+    "يa",
   )
 
-  @TestFactory
-  fun testFactory(): List<DynamicTest> {
+  @Test
+  fun test() {
     val list = WebPlatformToAsciiData.load()
-    return list.map { entry ->
-      DynamicTest.dynamicTest(entry.input!!) {
-        var failure: AssertionError? = null
-        try {
-          testToAscii(entry.input!!, entry.output, entry.comment)
-        } catch (e: AssertionError) {
-          failure = e
-        }
-
-        if (entry.input in knownFailures) {
-          assertThat(failure).isNotNull()
-        } else {
-          if (failure != null) throw failure
-        }
+    val failures = mutableListOf<Throwable>()
+    for (entry in list) {
+      var failure: Throwable? = null
+      try {
+        testToAscii(entry.input!!, entry.output, entry.comment)
+      } catch (e: Throwable) {
+        failure = e
       }
+
+      if (entry.input in knownFailures) {
+        if (failure == null) failures += AssertionError("known failure didn't fail: $entry")
+      } else {
+        if (failure != null) failures += failure
+      }
+    }
+
+    if (failures.isNotEmpty()) {
+      for (failure in failures) {
+        println(failure)
+      }
+      throw failures.first()
     }
   }
 

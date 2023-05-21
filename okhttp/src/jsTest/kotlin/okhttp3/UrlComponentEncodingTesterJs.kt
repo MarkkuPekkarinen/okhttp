@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 Square, Inc.
+ * Copyright (C) 2023 Square, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,11 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package okhttp3.internal
+package okhttp3
 
-import com.squareup.okhttpicu.SYSTEM_NORMALIZER
+import okhttp3.UrlComponentEncodingTester.Component
 
-internal actual fun idnToAscii(host: String): String {
-  // TODO implement properly
-  return SYSTEM_NORMALIZER.normalizeNfc(host).lowercase()
-}
+actual fun urlComponentEncodingTesterJvmPlatform(
+  component: Component,
+) = UrlComponentEncodingTester.Platform()

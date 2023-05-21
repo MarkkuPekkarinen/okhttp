@@ -4,6 +4,7 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinCompile
 
 plugins {
   kotlin("multiplatform")
+  kotlin("plugin.serialization")
   id("org.jetbrains.dokka")
   id("com.vanniktech.maven.publish.base")
   id("binary-compatibility-validator")
@@ -29,23 +30,25 @@ kotlin {
           }
         }
       }
-      browser {
-      }
     }
   }
 
   sourceSets {
     commonMain {
       kotlin.srcDir("$buildDir/generated/sources/kotlinTemplates")
+      kotlin.srcDir("$buildDir/generated/sources/idnaMappingTable")
       dependencies {
         api(libs.squareup.okio)
       }
     }
     val commonTest by getting {
       dependencies {
-        implementation(libs.kotlin.test.common)
+        implementation(projects.okhttpTestingSupport)
+        implementation(libs.assertk)
         implementation(libs.kotlin.test.annotations)
-        api(libs.assertk)
+        implementation(libs.kotlin.test.common)
+        implementation(libs.kotlinx.serialization.core)
+        implementation(libs.kotlinx.serialization.json)
       }
     }
     val nonJvmMain = create("nonJvmMain") {
@@ -80,10 +83,8 @@ kotlin {
       }
     }
     getByName("jvmTest") {
-      kotlin.srcDir("$buildDir/generated/sources/idnaMappingTable")
       dependencies {
         dependsOn(commonTest)
-        implementation(projects.okhttpTestingSupport)
         implementation(projects.okhttpTls)
         implementation(projects.okhttpUrlconnection)
         implementation(projects.mockwebserver3)

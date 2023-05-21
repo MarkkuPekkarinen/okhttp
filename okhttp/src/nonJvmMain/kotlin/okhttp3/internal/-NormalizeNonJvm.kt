@@ -13,5 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package okhttp3.internal
+
+import com.squareup.okhttpicu.SYSTEM_NORMALIZER
+
+internal actual fun normalizeNfc(string: String): String =
+  SYSTEM_NORMALIZER.normalizeNfc(string)
