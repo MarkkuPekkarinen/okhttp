@@ -15,11 +15,14 @@
  */
 package mockwebserver3.junit5.internal
 
+import assertk.assertThat
+import assertk.assertions.isEqualTo
+import assertk.assertions.isSameAs
+import assertk.assertions.isTrue
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClientTestRule
 import okhttp3.Request
-import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -31,25 +34,25 @@ class ExtensionLifecycleTest {
   @RegisterExtension
   val clientTestRule: OkHttpClientTestRule = OkHttpClientTestRule()
 
-  lateinit var _server: MockWebServer
+  lateinit var setUpServer: MockWebServer
 
   @BeforeEach
   fun setup(server: MockWebServer) {
-    _server = server
+    this.setUpServer = server
     assertThat(server.started).isTrue()
     server.enqueue(MockResponse())
   }
 
   @AfterEach
   fun tearDown(server: MockWebServer) {
-    assertThat(_server).isSameAs(server)
+    assertThat(setUpServer).isSameAs(server)
     assertThat(server.started).isTrue()
     server.enqueue(MockResponse())
   }
 
   @Test
   fun testClient(server: MockWebServer) {
-    assertThat(_server).isSameAs(server)
+    assertThat(setUpServer).isSameAs(server)
     assertThat(server.started).isTrue()
     clientTestRule.newClient().newCall(Request(server.url("/"))).execute().use {
       assertThat(it.code).isEqualTo(200)

@@ -15,8 +15,11 @@
  */
 package mockwebserver3.junit5.internal
 
+import assertk.assertThat
+import assertk.assertions.isEqualTo
+import assertk.assertions.isNotEqualTo
+import assertk.assertions.isTrue
 import mockwebserver3.MockWebServer
-import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -32,7 +35,7 @@ class ExtensionMultipleInstancesTest {
   fun setup(
     defaultInstance: MockWebServer,
     @MockWebServerInstance("A") instanceA: MockWebServer,
-    @MockWebServerInstance("B") instanceB: MockWebServer
+    @MockWebServerInstance("B") instanceB: MockWebServer,
   ) {
     defaultInstancePort = defaultInstance.port
     instanceAPort = instanceA.port
@@ -48,7 +51,7 @@ class ExtensionMultipleInstancesTest {
   fun tearDown(
     defaultInstance: MockWebServer,
     @MockWebServerInstance("A") instanceA: MockWebServer,
-    @MockWebServerInstance("B") instanceB: MockWebServer
+    @MockWebServerInstance("B") instanceB: MockWebServer,
   ) {
     assertThat(defaultInstance.port).isEqualTo(defaultInstancePort)
     assertThat(instanceA.port).isEqualTo(instanceAPort)
@@ -59,7 +62,7 @@ class ExtensionMultipleInstancesTest {
   fun testClient(
     defaultInstance: MockWebServer,
     @MockWebServerInstance("A") instanceA: MockWebServer,
-    @MockWebServerInstance("B") instanceB: MockWebServer
+    @MockWebServerInstance("B") instanceB: MockWebServer,
   ) {
     assertThat(defaultInstance.port).isEqualTo(defaultInstancePort)
     assertThat(instanceA.port).isEqualTo(instanceAPort)
