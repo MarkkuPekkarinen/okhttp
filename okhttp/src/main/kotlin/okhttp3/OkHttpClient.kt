@@ -166,6 +166,7 @@ open class OkHttpClient internal constructor(
     builder.retryOnConnectionFailure
 
   @get:JvmName("fastFallback")
+  @ExperimentalOkHttpApi
   val fastFallback: Boolean = builder.fastFallback
 
   @get:JvmName("authenticator")
@@ -232,6 +233,8 @@ open class OkHttpClient internal constructor(
   /**
    * Default call timeout (in milliseconds). By default there is no timeout for complete calls, but
    * there is for the connect, write, and read actions within a call.
+   *
+   * For WebSockets and duplex calls the timeout only applies to the initial setup.
    */
   @get:JvmName("callTimeoutMillis")
   val callTimeoutMillis: Int = builder.callTimeout
@@ -717,6 +720,7 @@ open class OkHttpClient internal constructor(
      *
      * [rfc_6555]: https://datatracker.ietf.org/doc/html/rfc6555
      */
+    @ExperimentalOkHttpApi
     fun fastFallback(fastFallback: Boolean) =
       apply {
         this.fastFallback = fastFallback
