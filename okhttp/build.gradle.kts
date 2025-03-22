@@ -13,7 +13,7 @@ plugins {
   id("org.jetbrains.dokka")
   id("com.vanniktech.maven.publish.base")
   id("binary-compatibility-validator")
-  id("io.github.gmazzo.aar2jar") version "1.0.1"
+  id("io.github.gmazzo.aar2jar") version "1.1.2"
 }
 
 val platform = System.getProperty("okhttp.platform", "jdk9")
@@ -189,7 +189,7 @@ if (platform == "jdk8alpn") {
 }
 
 android {
-  compileSdk = 34
+  compileSdk = 35
 
   namespace = "okhttp.okhttp3"
 
