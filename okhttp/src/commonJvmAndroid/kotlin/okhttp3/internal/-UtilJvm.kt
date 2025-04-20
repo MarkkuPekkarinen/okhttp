@@ -41,22 +41,11 @@ import okhttp3.Headers
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.defaultPort
 import okhttp3.OkHttpClient
-import okhttp3.RequestBody
 import okhttp3.Response
-import okhttp3.ResponseBody
 import okhttp3.internal.http2.Header
 import okio.Buffer
 import okio.BufferedSource
 import okio.Source
-
-@JvmField
-internal val EMPTY_HEADERS: Headers = commonEmptyHeaders
-
-@JvmField
-internal val EMPTY_REQUEST: RequestBody = commonEmptyRequestBody
-
-@JvmField
-internal val EMPTY_RESPONSE: ResponseBody = commonEmptyResponse
 
 /** GMT and UTC are equivalent for our purposes. */
 @JvmField
@@ -245,14 +234,17 @@ internal inline fun threadName(
 }
 
 /** Returns the Content-Length as reported by the response headers. */
-internal fun Response.headersContentLength(): Long = headers["Content-Length"]?.toLongOrDefault(-1L) ?: -1L
+internal fun Response.headersContentLength(): Long = headers["Content-Length"]?.toLongOrNull() ?: -1L
 
 /** Returns an immutable copy of this. */
-internal fun <T> List<T>.toImmutableList(): List<T> = Collections.unmodifiableList(toMutableList())
+internal inline fun <reified T> List<T>.toImmutableList(): List<T> = Collections.unmodifiableList(toTypedArray().asList())
 
 /** Returns an immutable list containing [elements]. */
 @SafeVarargs
-internal fun <T> immutableListOf(vararg elements: T): List<T> = Collections.unmodifiableList(listOf(*elements.clone()))
+internal fun <T> immutableListOf(vararg elements: T): List<T> = Collections.unmodifiableList(elements.asList())
+
+/** Returns an immutable list from copy of this. */
+internal fun <T> Array<out T>?.toImmutableList(): List<T> = this?.let { Collections.unmodifiableList(it.copyOf().asList()) } ?: emptyList()
 
 /** Closes this, ignoring any checked exceptions. */
 internal fun Socket.closeQuietly() {

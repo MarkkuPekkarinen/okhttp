@@ -1,20 +1,21 @@
 [versions]
 # 7.0.0 is JDK 17+ https://github.com/bndtools/bnd/wiki/Changes-in-7.0.0
 biz-aQute-bnd = "6.4.0"
-checkStyle = "10.21.4"
+checkStyle = "10.23.0"
 com-squareup-moshi = "1.15.2"
 com-squareup-okio = "3.10.2"
 de-mannodermaus-junit5 = "1.7.0"
 graalvm = "24.1.1"
-kotlinx-serialization = "1.8.0"
+junit-platform = "1.12.2"
+kotlinx-serialization = "1.8.1"
 ksp = "2.1.0-1.0.29"
 lintGradle = "1.0.0-alpha03"
 mockserverClient = "5.15.0"
 org-bouncycastle = "1.80"
 org-conscrypt = "2.5.2"
-org-jetbrains-coroutines = "1.10.1"
-org-jetbrains-kotlin = "2.1.0"
-org-junit-jupiter = "5.11.4"
+org-jetbrains-coroutines = "1.10.2"
+org-jetbrains-kotlin = "2.1.10"
+org-junit-jupiter = "5.12.2"
 retrofit = "2.11.0"
 startupRuntime = "1.2.0"
 testcontainers = "1.20.6"
@@ -44,23 +45,22 @@ converter-moshi = { module = "com.squareup.retrofit2:converter-moshi", version.r
 eclipseOsgi = "org.eclipse.platform:org.eclipse.osgi:3.23.0"
 findbugs-jsr305 = "com.google.code.findbugs:jsr305:3.0.2"
 graal-sdk = { module = "org.graalvm.sdk:graal-sdk", version.ref = "graalvm" }
-gradlePlugin-android = "com.android.tools.build:gradle:8.9.0"
+gradlePlugin-android = "com.android.tools.build:gradle:8.9.1"
 gradlePlugin-androidJunit5 = "de.mannodermaus.gradle.plugins:android-junit5:1.12.0.0"
 gradlePlugin-animalsniffer = "ru.vyarus:gradle-animalsniffer-plugin:1.7.2"
 gradlePlugin-binaryCompatibilityValidator = "org.jetbrains.kotlinx.binary-compatibility-validator:org.jetbrains.kotlinx.binary-compatibility-validator.gradle.plugin:0.17.0"
 gradlePlugin-bnd = { module = "biz.aQute.bnd:biz.aQute.bnd.gradle", version.ref = "biz-aQute-bnd" }
 gradlePlugin-dokka = "org.jetbrains.dokka:dokka-gradle-plugin:2.0.0"
-gradlePlugin-errorprone = "net.ltgt.gradle:gradle-errorprone-plugin:4.1.0"
+gradlePlugin-errorprone = "net.ltgt.gradle:gradle-errorprone-plugin:4.2.0"
 gradlePlugin-graalvmBuildTools = "org.graalvm.buildtools.native:org.graalvm.buildtools.native.gradle.plugin:0.10.4"
 gradlePlugin-kotlin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "org-jetbrains-kotlin" }
 gradlePlugin-kotlinSerialization = { module = "org.jetbrains.kotlin:kotlin-serialization", version.ref = "org-jetbrains-kotlin" }
 gradlePlugin-mavenPublish = "com.vanniktech:gradle-maven-publish-plugin:0.31.0"
 gradlePlugin-mavenSympathy = "io.github.usefulness.maven-sympathy:io.github.usefulness.maven-sympathy.gradle.plugin:0.3.0"
 gradlePlugin-shadow = "gradle.plugin.com.github.johnrengelman:shadow:8.0.0"
-gradlePlugin-spotless = "com.diffplug.spotless:spotless-plugin-gradle:7.0.2"
-guava-jre = "com.google.guava:guava:33.4.5-jre"
+gradlePlugin-spotless = "com.diffplug.spotless:spotless-plugin-gradle:7.0.3"
 hamcrestLibrary = "org.hamcrest:hamcrest-library:3.0"
-httpClient5 = "org.apache.httpcomponents.client5:httpclient5:5.4.2"
+httpClient5 = "org.apache.httpcomponents.client5:httpclient5:5.4.3"
 jettyClient = "org.eclipse.jetty:jetty-client:9.4.57.v20241219"
 jnr-unixsocket = "com.github.jnr:jnr-unixsocket:0.38.23"
 jsoup = "org.jsoup:jsoup:1.19.1"
@@ -69,8 +69,9 @@ junit-ktx = "androidx.test.ext:junit-ktx:1.2.1"
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "org-junit-jupiter" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "org-junit-jupiter" }
 junit-jupiter-params = { module = "org.junit.jupiter:junit-jupiter-params", version.ref = "org-junit-jupiter" }
-junit-platform-console = "org.junit.platform:junit-platform-console:1.11.4"
-junit-vintage-engine = "org.junit.vintage:junit-vintage-engine:5.11.4"
+junit-platform-console = { module = "org.junit.platform:junit-platform-console", version.ref = "junit-platform" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
+junit-vintage-engine = { module = "org.junit.vintage:junit-vintage-engine", version.ref = "org-junit-jupiter" }
 junit-pioneer = "org.junit-pioneer:junit-pioneer:1.9.1"
 junit5android-core = { module = "de.mannodermaus.junit5:android-test-core", version.ref = "de-mannodermaus-junit5" }
 junit5android-runner = { module = "de.mannodermaus.junit5:android-test-runner", version.ref = "de-mannodermaus-junit5" }
