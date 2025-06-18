@@ -27,6 +27,7 @@ import assertk.assertions.isCloseTo
 import assertk.assertions.isEmpty
 import assertk.assertions.isEqualTo
 import assertk.assertions.isFalse
+import assertk.assertions.isIn
 import assertk.assertions.isLessThan
 import assertk.assertions.isNotEmpty
 import assertk.assertions.isNotNull
@@ -78,7 +79,7 @@ import mockwebserver3.SocketPolicy.FailHandshake
 import mockwebserver3.SocketPolicy.HalfCloseAfterRequest
 import mockwebserver3.SocketPolicy.NoResponse
 import mockwebserver3.SocketPolicy.StallSocketAtStart
-import mockwebserver3.junit5.internal.MockWebServerInstance
+import mockwebserver3.junit5.StartStop
 import okhttp3.CallEvent.CallEnd
 import okhttp3.CallEvent.ConnectStart
 import okhttp3.CallEvent.ConnectionAcquired
@@ -110,6 +111,7 @@ import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import okio.Buffer
 import okio.BufferedSink
+import okio.ByteString
 import okio.ForwardingSource
 import okio.GzipSink
 import okio.Path.Companion.toPath
@@ -140,8 +142,11 @@ open class CallTest {
   @RegisterExtension
   val testLogHandler = TestLogHandler(OkHttpClient::class.java)
 
-  private lateinit var server: MockWebServer
-  private lateinit var server2: MockWebServer
+  @StartStop
+  private val server = MockWebServer()
+
+  @StartStop
+  private val server2 = MockWebServer()
 
   private var listener = RecordingEventListener()
   private val handshakeCertificates = platform.localhostHandshakeCertificates()
@@ -159,13 +164,7 @@ open class CallTest {
     )
 
   @BeforeEach
-  fun setUp(
-    server: MockWebServer,
-    @MockWebServerInstance("server2") server2: MockWebServer,
-  ) {
-    this.server = server
-    this.server2 = server2
-
+  fun setUp() {
     platform.assumeNotOpenJSSE()
   }
 
@@ -204,7 +203,7 @@ open class CallTest {
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.method).isEqualTo("GET")
     assertThat(recordedRequest.headers["User-Agent"]).isEqualTo("SyncApiTest")
-    assertThat(recordedRequest.body.size).isEqualTo(0)
+    assertThat(recordedRequest.body).isNull()
     assertThat(recordedRequest.headers["Content-Length"]).isNull()
   }
 
@@ -308,7 +307,7 @@ open class CallTest {
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.method).isEqualTo("HEAD")
     assertThat(recordedRequest.headers["User-Agent"]).isEqualTo("SyncApiTest")
-    assertThat(recordedRequest.body.size).isEqualTo(0)
+    assertThat(recordedRequest.body).isNull()
     assertThat(recordedRequest.headers["Content-Length"]).isNull()
   }
 
@@ -394,7 +393,7 @@ open class CallTest {
       .assertBody("abc")
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.method).isEqualTo("POST")
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("def")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("def")
     assertThat(recordedRequest.headers["Content-Length"]).isEqualTo("3")
     assertThat(recordedRequest.headers["Content-Type"]).isEqualTo("text/plain; charset=utf-8")
   }
@@ -425,7 +424,7 @@ open class CallTest {
       .assertBody("abc")
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.method).isEqualTo("POST")
-    assertThat(recordedRequest.body.size).isEqualTo(0)
+    assertThat(recordedRequest.body?.size).isEqualTo(0)
     assertThat(recordedRequest.headers["Content-Length"]).isEqualTo("0")
     assertThat(recordedRequest.headers["Content-Type"]).isNull()
   }
@@ -497,11 +496,11 @@ open class CallTest {
     response.body.close()
     val recordedRequest1 = server.takeRequest()
     assertThat(recordedRequest1.method).isEqualTo("POST")
-    assertThat(recordedRequest1.body.readUtf8()).isEqualTo(body)
+    assertThat(recordedRequest1.body?.utf8()).isEqualTo(body)
     assertThat(recordedRequest1.headers["Authorization"]).isNull()
     val recordedRequest2 = server.takeRequest()
     assertThat(recordedRequest2.method).isEqualTo("POST")
-    assertThat(recordedRequest2.body.readUtf8()).isEqualTo(body)
+    assertThat(recordedRequest2.body?.utf8()).isEqualTo(body)
     assertThat(recordedRequest2.headers["Authorization"]).isEqualTo(credential)
   }
 
@@ -578,7 +577,7 @@ open class CallTest {
       .assertBody("abc")
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.method).isEqualTo("DELETE")
-    assertThat(recordedRequest.body.size).isEqualTo(0)
+    assertThat(recordedRequest.body?.size).isEqualTo(0)
     assertThat(recordedRequest.headers["Content-Length"]).isEqualTo("0")
     assertThat(recordedRequest.headers["Content-Type"]).isNull()
   }
@@ -609,7 +608,7 @@ open class CallTest {
       .assertBody("abc")
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.method).isEqualTo("DELETE")
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("def")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("def")
   }
 
   @Test
@@ -626,7 +625,7 @@ open class CallTest {
       .assertBody("abc")
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.method).isEqualTo("PUT")
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("def")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("def")
     assertThat(recordedRequest.headers["Content-Length"]).isEqualTo("3")
     assertThat(recordedRequest.headers["Content-Type"]).isEqualTo(
       "text/plain; charset=utf-8",
@@ -659,7 +658,7 @@ open class CallTest {
       .assertBody("abc")
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.method).isEqualTo("PATCH")
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("def")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("def")
     assertThat(recordedRequest.headers["Content-Length"]).isEqualTo("3")
     assertThat(recordedRequest.headers["Content-Type"]).isEqualTo("text/plain; charset=utf-8")
   }
@@ -690,7 +689,7 @@ open class CallTest {
       .assertBody("abc")
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.method).isEqualTo("CUSTOM")
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("def")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("def")
     assertThat(recordedRequest.headers["Content-Length"]).isEqualTo("3")
     assertThat(recordedRequest.headers["Content-Type"])
       .isEqualTo("text/plain; charset=utf-8")
@@ -709,7 +708,7 @@ open class CallTest {
     val recordedRequest = server.takeRequest()
     assertThat(recordedRequest.headers["Content-Type"]).isNull()
     assertThat(recordedRequest.headers["Content-Length"]).isEqualTo("3")
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("abc")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("abc")
   }
 
   @Test
@@ -877,21 +876,21 @@ open class CallTest {
       OkHttpClient
         .Builder()
         .connectionPool(client.connectionPool)
-        .proxy(server.toProxyAddress())
+        .proxy(server.proxyAddress)
         .build()
     executeSynchronously("/a").assertBody("abc")
     client =
       OkHttpClient
         .Builder()
         .connectionPool(client.connectionPool)
-        .proxy(server.toProxyAddress())
+        .proxy(server.proxyAddress)
         .build()
     executeSynchronously("/b").assertBody("def")
     client =
       OkHttpClient
         .Builder()
         .connectionPool(client.connectionPool)
-        .proxy(server.toProxyAddress())
+        .proxy(server.proxyAddress)
         .build()
     executeSynchronously("/c").assertBody("ghi")
     assertThat(server.takeRequest().sequenceNumber).isEqualTo(0)
@@ -904,7 +903,7 @@ open class CallTest {
     client =
       OkHttpClient
         .Builder()
-        .proxy(server.toProxyAddress())
+        .proxy(server.proxyAddress)
         .build()
     server.enqueue(MockResponse(body = "abc"))
     server.enqueue(MockResponse(body = "def"))
@@ -1039,7 +1038,7 @@ open class CallTest {
   fun connectTimeoutsAttemptsAlternateRoute() {
     val proxySelector = RecordingProxySelector()
     proxySelector.proxies.add(Proxy(Proxy.Type.HTTP, TestUtil.UNREACHABLE_ADDRESS_IPV4))
-    proxySelector.proxies.add(server.toProxyAddress())
+    proxySelector.proxies.add(server.proxyAddress)
     server.enqueue(MockResponse(body = "success!"))
     client =
       client
@@ -1121,8 +1120,8 @@ open class CallTest {
       MockResponse(body = "success!"),
     )
     val proxySelector = RecordingProxySelector()
-    proxySelector.proxies.add(server.toProxyAddress())
-    proxySelector.proxies.add(server2.toProxyAddress())
+    proxySelector.proxies.add(server.proxyAddress)
+    proxySelector.proxies.add(server2.proxyAddress)
     client =
       client
         .newBuilder()
@@ -1262,9 +1261,9 @@ open class CallTest {
           return super.dispatch(request)
         }
       }
-    dispatcher.enqueueResponse(MockResponse(body = "seed connection pool"))
-    dispatcher.enqueueResponse(MockResponse(socketPolicy = DisconnectAfterRequest))
-    dispatcher.enqueueResponse(MockResponse(body = "retry success"))
+    dispatcher.enqueue(MockResponse(body = "seed connection pool"))
+    dispatcher.enqueue(MockResponse(socketPolicy = DisconnectAfterRequest))
+    dispatcher.enqueue(MockResponse(body = "retry success"))
     server.dispatcher = dispatcher
     listener =
       object : RecordingEventListener() {
@@ -1676,7 +1675,7 @@ open class CallTest {
       .assertCode(200)
       .assertBody("abc")
     val recordedRequest = server.takeRequest()
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("def")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("def")
     assertThat(recordedRequest.headers["Content-Length"]).isEqualTo("3")
     assertThat(recordedRequest.headers["Content-Type"]).isEqualTo("text/plain; charset=utf-8")
   }
@@ -1724,8 +1723,7 @@ open class CallTest {
       "CallFailed",
     )
     assertThat(listener.findEvent<RetryDecision>()).all {
-      prop(RetryDecision::reason).isEqualTo("retryOnConnectionFailure is false")
-      prop(RetryDecision::shouldRetry).isFalse()
+      prop(RetryDecision::retry).isFalse()
     }
     listener.clearAllEvents()
 
@@ -1745,6 +1743,7 @@ open class CallTest {
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "ConnectionReleased",
@@ -1755,7 +1754,7 @@ open class CallTest {
     assertThat(get.sequenceNumber).isEqualTo(0)
 
     val post1 = server.takeRequest()
-    assertThat(post1.body.readUtf8()).isEqualTo("body!")
+    assertThat(post1.body?.utf8()).isEqualTo("body!")
     assertThat(post1.sequenceNumber).isEqualTo(1)
 
     val get2 = server.takeRequest()
@@ -1782,10 +1781,10 @@ open class CallTest {
     val get = server.takeRequest()
     assertThat(get.sequenceNumber).isEqualTo(0)
     val post1 = server.takeRequest()
-    assertThat(post1.body.readUtf8()).isEqualTo("body!")
+    assertThat(post1.body?.utf8()).isEqualTo("body!")
     assertThat(post1.sequenceNumber).isEqualTo(1)
     val post2 = server.takeRequest()
-    assertThat(post2.body.readUtf8()).isEqualTo("body!")
+    assertThat(post2.body?.utf8()).isEqualTo("body!")
     assertThat(post2.sequenceNumber).isEqualTo(0)
   }
 
@@ -2203,7 +2202,7 @@ open class CallTest {
     assertThat(response.body.string()).isEqualTo("Page 2")
     val page1 = server.takeRequest()
     assertThat(page1.requestLine).isEqualTo("POST /page1 HTTP/1.1")
-    assertThat(page1.body.readUtf8()).isEqualTo("Request Body")
+    assertThat(page1.body?.utf8()).isEqualTo("Request Body")
     val page2 = server.takeRequest()
     assertThat(page2.requestLine).isEqualTo("GET /page2 HTTP/1.1")
   }
@@ -2264,9 +2263,9 @@ open class CallTest {
     val response = client.newCall(request).execute()
     assertThat(response.body.string()).isEqualTo("Body")
     val request1 = server.takeRequest()
-    assertThat(request1.body.readUtf8()).isEqualTo("Hello")
+    assertThat(request1.body?.utf8()).isEqualTo("Hello")
     val request2 = server.takeRequest()
-    assertThat(request2.body.readUtf8()).isEqualTo("Hello")
+    assertThat(request2.body?.utf8()).isEqualTo("Hello")
   }
 
   @Test
@@ -2403,8 +2402,8 @@ open class CallTest {
     val response = client.newCall(request).execute()
     assertThat(response.code).isEqualTo(200)
     assertThat(response.body.string()).isEqualTo("thank you for retrying")
-    assertThat(server.takeRequest().body.readUtf8()).isEqualTo("attempt 0")
-    assertThat(server.takeRequest().body.readUtf8()).isEqualTo("attempt 1")
+    assertThat(server.takeRequest().body?.utf8()).isEqualTo("attempt 0")
+    assertThat(server.takeRequest().body?.utf8()).isEqualTo("attempt 1")
     assertThat(server.requestCount).isEqualTo(2)
   }
 
@@ -2439,7 +2438,7 @@ open class CallTest {
     val response = client.newCall(request).execute()
     assertThat(response.code).isEqualTo(503)
     assertThat(response.body.string()).isEqualTo("please retry")
-    assertThat(server.takeRequest().body.readUtf8()).isEqualTo("attempt 0")
+    assertThat(server.takeRequest().body?.utf8()).isEqualTo("attempt 0")
     assertThat(server.requestCount).isEqualTo(1)
   }
 
@@ -2470,10 +2469,10 @@ open class CallTest {
     assertThat(response.body.string()).isEqualTo("Page 2")
     val page1 = server.takeRequest()
     assertThat(page1.requestLine).isEqualTo("PROPFIND /page1 HTTP/1.1")
-    assertThat(page1.body.readUtf8()).isEqualTo("Request Body")
+    assertThat(page1.body?.utf8()).isEqualTo("Request Body")
     val page2 = server.takeRequest()
     assertThat(page2.requestLine).isEqualTo("PROPFIND /page2 HTTP/1.1")
-    assertThat(page2.body.readUtf8()).isEqualTo("Request Body")
+    assertThat(page2.body?.utf8()).isEqualTo("Request Body")
   }
 
   @Test
@@ -2581,7 +2580,7 @@ open class CallTest {
     assertThat(response.body.string()).isEqualTo("Page 2")
     val redirectRequest = server2.takeRequest()
     assertThat(redirectRequest.headers["Authorization"]).isNull()
-    assertThat(redirectRequest.path).isEqualTo("/b")
+    assertThat(redirectRequest.url.encodedPath).isEqualTo("/b")
   }
 
   @Test
@@ -2902,7 +2901,7 @@ open class CallTest {
     assertFailsWith<IOException> {
       call.execute()
     }
-    assertThat(server.takeRequest().path).isEqualTo("/a")
+    assertThat(server.takeRequest().url.encodedPath).isEqualTo("/a")
   }
 
   @Test
@@ -2946,7 +2945,7 @@ open class CallTest {
       }
     callA.enqueue(callback)
     callB.enqueue(callback)
-    assertThat(server.takeRequest().path).isEqualTo("/a")
+    assertThat(server.takeRequest().url.encodedPath).isEqualTo("/a")
     callback.await(requestA.url).assertBody("A")
     // At this point we know the callback is ready, and that it will receive a cancel failure.
     callback.await(requestB.url).assertFailure("Canceled", "Socket closed")
@@ -2976,7 +2975,7 @@ open class CallTest {
         }
       }
     call.enqueue(callback)
-    assertThat(server.takeRequest().path).isEqualTo("/a")
+    assertThat(server.takeRequest().url.encodedPath).isEqualTo("/a")
     callback.await(requestA.url).assertFailure(
       "Canceled",
       "stream was reset: CANCEL",
@@ -3247,7 +3246,7 @@ open class CallTest {
     executeSynchronously(request)
       .assertCode(200)
       .assertSuccessful()
-    assertThat(server.takeRequest().body.readUtf8()).isEqualTo("abc")
+    assertThat(server.takeRequest().body?.utf8()).isEqualTo("abc")
   }
 
   @Test
@@ -3292,7 +3291,7 @@ open class CallTest {
       call.execute()
     }
     val recordedRequest = server.takeRequest()
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("")
+    assertThat(recordedRequest.body).isIn(null, ByteString.EMPTY)
   }
 
   @Tag("Slowish")
@@ -3319,7 +3318,7 @@ open class CallTest {
       .assertCode(200)
       .assertSuccessful()
     val recordedRequest = server.takeRequest()
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("abc")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("abc")
   }
 
   @Test
@@ -3349,8 +3348,35 @@ open class CallTest {
       .assertCode(200)
       .assertSuccessful()
     val recordedRequest = server.takeRequest()
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("abc")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("abc")
     assertThat(recordedRequest.headers["Link"]).isNull()
+  }
+
+  @Test
+  fun serverReturnsMultiple100ContinuesHttp2() {
+    enableProtocol(Protocol.HTTP_2)
+    serverReturnsMultiple100Continues()
+  }
+
+  @Test
+  fun serverReturnsMultiple100Continues() {
+    server.enqueue(
+      MockResponse
+        .Builder()
+        .add100Continue()
+        .add100Continue()
+        .add100Continue()
+        .build(),
+    )
+
+    val request =
+      Request(
+        url = server.url("/"),
+        body = "abc".toRequestBody("text/plain".toMediaType()),
+      )
+    executeSynchronously(request).assertCode(200).assertSuccessful()
+    val recordedRequest = server.takeRequest()
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("abc")
   }
 
   @Test
@@ -3379,7 +3405,7 @@ open class CallTest {
       .assertCode(200)
       .assertSuccessful()
     val recordedRequest = server.takeRequest()
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("abc")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("abc")
   }
 
   @Test
@@ -3406,7 +3432,7 @@ open class CallTest {
       .assertCode(200)
       .assertSuccessful()
     val recordedRequest = server.takeRequest()
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("abc")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("abc")
   }
 
   @Test
@@ -3434,7 +3460,7 @@ open class CallTest {
       call.execute()
     }
     val recordedRequest = server.takeRequest()
-    assertThat(recordedRequest.body.readUtf8()).isEqualTo("abc")
+    assertThat(recordedRequest.body?.utf8()).isEqualTo("abc")
   }
 
   @Tag("Slow")
@@ -3618,7 +3644,10 @@ open class CallTest {
   fun proxyConnectOmitsApplicationHeaders() {
     server.useHttps(handshakeCertificates.sslSocketFactory())
     server.enqueue(
-      MockResponse(inTunnel = true),
+      MockResponse
+        .Builder()
+        .inTunnel()
+        .build(),
     )
     server.enqueue(
       MockResponse(body = "encrypted response from the origin server"),
@@ -3630,7 +3659,7 @@ open class CallTest {
         .sslSocketFactory(
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
-        ).proxy(server.toProxyAddress())
+        ).proxy(server.proxyAddress)
         .hostnameVerifier(hostnameVerifier)
         .build()
     val request =
@@ -3676,7 +3705,7 @@ open class CallTest {
         .sslSocketFactory(
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
-        ).proxy(server.toProxyAddress())
+        ).proxy(server.proxyAddress)
         .hostnameVerifier(hostnameVerifier)
         .build()
     val request = Request("https://android.com/foo".toHttpUrl())
@@ -3692,14 +3721,18 @@ open class CallTest {
   fun proxyAuthenticateOnConnect() {
     server.useHttps(handshakeCertificates.sslSocketFactory())
     server.enqueue(
-      MockResponse(
-        code = 407,
-        headers = headersOf("Proxy-Authenticate", "Basic realm=\"localhost\""),
-        inTunnel = true,
-      ),
+      MockResponse
+        .Builder()
+        .code(407)
+        .headers(headersOf("Proxy-Authenticate", "Basic realm=\"localhost\""))
+        .inTunnel()
+        .build(),
     )
     server.enqueue(
-      MockResponse(inTunnel = true),
+      MockResponse
+        .Builder()
+        .inTunnel()
+        .build(),
     )
     server.enqueue(
       MockResponse(body = "response body"),
@@ -3710,7 +3743,7 @@ open class CallTest {
         .sslSocketFactory(
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
-        ).proxy(server.toProxyAddress())
+        ).proxy(server.proxyAddress)
         .proxyAuthenticator(RecordingOkAuthenticator("password", "Basic"))
         .hostnameVerifier(RecordingHostnameVerifier())
         .build()
@@ -3743,7 +3776,7 @@ open class CallTest {
     client =
       client
         .newBuilder()
-        .proxy(server.toProxyAddress())
+        .proxy(server.proxyAddress)
         .proxyAuthenticator(RecordingOkAuthenticator("password", "Basic"))
         .build()
     val request = Request("http://android.com/foo".toHttpUrl())
@@ -3766,19 +3799,25 @@ open class CallTest {
     server.useHttps(handshakeCertificates.sslSocketFactory())
     server.protocols = listOf<Protocol>(Protocol.HTTP_1_1)
     server.enqueue(
-      MockResponse(
-        code = 407,
-        headers =
+      MockResponse
+        .Builder()
+        .code(407)
+        .headers(
           headersOf(
             "Proxy-Authenticate",
             "Basic realm=\"localhost\"",
             "Connection",
             "close",
           ),
-        inTunnel = true,
-      ),
+        ).inTunnel()
+        .build(),
     )
-    server.enqueue(MockResponse(inTunnel = true))
+    server.enqueue(
+      MockResponse
+        .Builder()
+        .inTunnel()
+        .build(),
+    )
     server.enqueue(
       MockResponse(body = "response body"),
     )
@@ -3788,7 +3827,7 @@ open class CallTest {
         .sslSocketFactory(
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
-        ).proxy(server.toProxyAddress())
+        ).proxy(server.proxyAddress)
         .proxyAuthenticator(RecordingOkAuthenticator("password", "Basic"))
         .hostnameVerifier(RecordingHostnameVerifier())
         .build()
@@ -3812,17 +3851,18 @@ open class CallTest {
     server.protocols = listOf(Protocol.HTTP_1_1)
     for (i in 0..20) {
       server.enqueue(
-        MockResponse(
-          code = 407,
-          headers =
+        MockResponse
+          .Builder()
+          .code(407)
+          .headers(
             headersOf(
               "Proxy-Authenticate",
               "Basic realm=\"localhost\"",
               "Connection",
               "close",
             ),
-          inTunnel = true,
-        ),
+          ).inTunnel()
+          .build(),
       )
     }
     client =
@@ -3831,7 +3871,7 @@ open class CallTest {
         .sslSocketFactory(
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
-        ).proxy(server.toProxyAddress())
+        ).proxy(server.proxyAddress)
         .proxyAuthenticator(RecordingOkAuthenticator("password", "Basic"))
         .hostnameVerifier(RecordingHostnameVerifier())
         .build()
@@ -3849,7 +3889,12 @@ open class CallTest {
   @Test
   fun noPreemptiveProxyAuthorization() {
     server.useHttps(handshakeCertificates.sslSocketFactory())
-    server.enqueue(MockResponse(inTunnel = true))
+    server.enqueue(
+      MockResponse
+        .Builder()
+        .inTunnel()
+        .build(),
+    )
     server.enqueue(MockResponse(body = "response body"))
     client =
       client
@@ -3857,7 +3902,7 @@ open class CallTest {
         .sslSocketFactory(
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
-        ).proxy(server.toProxyAddress())
+        ).proxy(server.proxyAddress)
         .hostnameVerifier(RecordingHostnameVerifier())
         .build()
     val request =
@@ -3878,7 +3923,12 @@ open class CallTest {
   @Test
   fun preemptiveProxyAuthentication() {
     server.useHttps(handshakeCertificates.sslSocketFactory())
-    server.enqueue(MockResponse(inTunnel = true))
+    server.enqueue(
+      MockResponse
+        .Builder()
+        .inTunnel()
+        .build(),
+    )
     server.enqueue(MockResponse(body = "encrypted response from the origin server"))
     val credential = basic("jesse", "password1")
     client =
@@ -3887,7 +3937,7 @@ open class CallTest {
         .sslSocketFactory(
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
-        ).proxy(server.toProxyAddress())
+        ).proxy(server.proxyAddress)
         .hostnameVerifier(RecordingHostnameVerifier())
         .proxyAuthenticator { _: Route?, response: Response? ->
           assertThat(response!!.request.method).isEqualTo("CONNECT")
@@ -3905,25 +3955,31 @@ open class CallTest {
     val connect = server.takeRequest()
     assertThat(connect.method).isEqualTo("CONNECT")
     assertThat(connect.headers["Proxy-Authorization"]).isEqualTo(credential)
-    assertThat(connect.path).isEqualTo("/")
+    assertThat(connect.url.encodedPath).isEqualTo("/")
     val get = server.takeRequest()
     assertThat(get.method).isEqualTo("GET")
     assertThat(get.headers["Proxy-Authorization"]).isNull()
-    assertThat(get.path).isEqualTo("/foo")
+    assertThat(get.url.encodedPath).isEqualTo("/foo")
   }
 
   @Test
   fun preemptiveThenReactiveProxyAuthentication() {
     server.useHttps(handshakeCertificates.sslSocketFactory())
     server.enqueue(
-      MockResponse(
-        code = HttpURLConnection.HTTP_PROXY_AUTH,
-        headers = headersOf("Proxy-Authenticate", "Basic realm=\"localhost\""),
-        body = "proxy auth required",
-        inTunnel = true,
-      ),
+      MockResponse
+        .Builder()
+        .code(HttpURLConnection.HTTP_PROXY_AUTH)
+        .headers(headersOf("Proxy-Authenticate", "Basic realm=\"localhost\""))
+        .inTunnel()
+        .body("proxy auth required")
+        .build(),
     )
-    server.enqueue(MockResponse(inTunnel = true))
+    server.enqueue(
+      MockResponse
+        .Builder()
+        .inTunnel()
+        .build(),
+    )
     server.enqueue(MockResponse())
     val challengeSchemes: MutableList<String?> = ArrayList()
     val credential = basic("jesse", "password1")
@@ -3933,7 +3989,7 @@ open class CallTest {
         .sslSocketFactory(
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
-        ).proxy(server.toProxyAddress())
+        ).proxy(server.proxyAddress)
         .hostnameVerifier(RecordingHostnameVerifier())
         .proxyAuthenticator { _: Route?, response: Response ->
           val challenges = response.challenges()
@@ -3960,10 +4016,11 @@ open class CallTest {
   fun proxyDisconnectsAfterRequest() {
     server.useHttps(handshakeCertificates.sslSocketFactory())
     server.enqueue(
-      MockResponse(
-        inTunnel = true,
-        socketPolicy = DisconnectAfterRequest,
-      ),
+      MockResponse
+        .Builder()
+        .inTunnel()
+        .socketPolicy(DisconnectAfterRequest)
+        .build(),
     )
     client =
       client
@@ -3971,7 +4028,7 @@ open class CallTest {
         .sslSocketFactory(
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
-        ).proxy(server.toProxyAddress())
+        ).proxy(server.proxyAddress)
         .build()
     val request = Request(server.url("/"))
     assertFailsWith<IOException> {
@@ -4101,7 +4158,7 @@ open class CallTest {
 
   @Test
   fun connectFails() {
-    server.shutdown()
+    server.close()
     executeSynchronously("/")
       .assertFailure(IOException::class.java)
   }
@@ -4116,17 +4173,17 @@ open class CallTest {
         .newBuilder()
         .proxySelector(
           FakeProxySelector()
-            .addProxy(server2.toProxyAddress())
+            .addProxy(server2.proxyAddress)
             .addProxy(Proxy.NO_PROXY),
         ).build()
-    server2.shutdown()
+    server2.close()
     val request =
       Request(
         url = server.url("/"),
         body = "abc".toRequestBody("text/plain".toMediaType()),
       )
     executeSynchronously(request)
-    assertThat(server.takeRequest().body.readUtf8()).isEqualTo("abc")
+    assertThat(server.takeRequest().body?.utf8()).isEqualTo("abc")
   }
 
   @Disabled // This may fail in DNS lookup, which we don't have timeouts for.
@@ -4209,7 +4266,7 @@ open class CallTest {
     assertThat(get.requestLine).isEqualTo("GET / HTTP/1.1")
     assertThat(get.headers["Host"]).isEqualTo("[::1]:$port")
     assertThat(get.headers[":authority"]).isNull()
-    assertThat(get.requestUrl).isEqualTo(url)
+    assertThat(get.url).isEqualTo(url)
   }
 
   @Test
@@ -4243,7 +4300,7 @@ open class CallTest {
     assertThat(get.headers[":authority"]).isEqualTo(
       "[::1]:$port",
     )
-    assertThat(get.requestUrl).isEqualTo(url)
+    assertThat(get.url).isEqualTo(url)
   }
 
   @Test
@@ -4277,7 +4334,7 @@ open class CallTest {
       "127.0.0.1:$port",
     )
     assertThat(get.headers[":authority"]).isNull()
-    assertThat(get.requestUrl).isEqualTo(url)
+    assertThat(get.url).isEqualTo(url)
   }
 
   @Test
@@ -4305,7 +4362,7 @@ open class CallTest {
     assertThat(get.requestLine).isEqualTo("GET / HTTP/1.1")
     assertThat(get.headers["Host"]).isNull()
     assertThat(get.headers[":authority"]).isEqualTo("127.0.0.1:$port")
-    assertThat(get.requestUrl).isEqualTo(url)
+    assertThat(get.url).isEqualTo(url)
   }
 
   @Test
@@ -4333,7 +4390,7 @@ open class CallTest {
     assertThat(get.requestLine).isEqualTo("GET / HTTP/1.1")
     assertThat(get.headers["Host"]).isEqualTo("any-host-name:$port")
     assertThat(get.headers[":authority"]).isNull()
-    assertThat(get.requestUrl).isEqualTo(url)
+    assertThat(get.url).isEqualTo(url)
   }
 
   @Test
@@ -4361,7 +4418,7 @@ open class CallTest {
     assertThat(get.requestLine).isEqualTo("GET / HTTP/1.1")
     assertThat(get.headers["Host"]).isNull()
     assertThat(get.headers[":authority"]).isEqualTo("any-host-name:$port")
-    assertThat(get.requestUrl).isEqualTo(url)
+    assertThat(get.url).isEqualTo(url)
   }
 
   /** Use a proxy to fake IPv6 connectivity, even if localhost doesn't have IPv6.  */
@@ -4372,7 +4429,12 @@ open class CallTest {
         http2 -> listOf(Protocol.HTTP_2, Protocol.HTTP_1_1)
         else -> listOf(Protocol.HTTP_1_1)
       }
-    server.enqueue(MockResponse(inTunnel = true))
+    server.enqueue(
+      MockResponse
+        .Builder()
+        .inTunnel()
+        .build(),
+    )
     client =
       client
         .newBuilder()
@@ -4380,7 +4442,7 @@ open class CallTest {
           handshakeCertificates.sslSocketFactory(),
           handshakeCertificates.trustManager,
         ).hostnameVerifier(RecordingHostnameVerifier())
-        .proxy(server.toProxyAddress())
+        .proxy(server.proxyAddress)
         .build()
   }
 

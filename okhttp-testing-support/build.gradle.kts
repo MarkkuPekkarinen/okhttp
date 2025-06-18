@@ -5,7 +5,8 @@ plugins {
 
 dependencies {
   api(libs.squareup.okio)
-  api(projects.okhttp)
+  api(projects.mockwebserver3)
+  "friendsApi"(projects.okhttp)
   api(projects.okhttpTls)
   api(libs.assertk)
   api(libs.bouncycastle.bcprov)
@@ -26,7 +27,6 @@ dependencies {
 
   api(libs.junit.pioneer)
 
-  compileOnly(libs.findbugs.jsr305)
   compileOnly(libs.robolectric.android)
 
   testImplementation(libs.kotlin.test.common)

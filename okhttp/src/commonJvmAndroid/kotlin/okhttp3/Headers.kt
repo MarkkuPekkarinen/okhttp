@@ -18,7 +18,6 @@
 package okhttp3
 
 import java.time.Instant
-import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import java.util.TreeMap
@@ -44,6 +43,7 @@ import okhttp3.internal.commonValues
 import okhttp3.internal.headersCheckName
 import okhttp3.internal.http.toHttpDateOrNull
 import okhttp3.internal.http.toHttpDateString
+import okhttp3.internal.unmodifiable
 import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement
 
 /**
@@ -107,7 +107,7 @@ class Headers internal constructor(
     for (i in 0 until size) {
       result.add(name(i))
     }
-    return Collections.unmodifiableSet(result)
+    return result.unmodifiable()
   }
 
   /** Returns an immutable list of the header values for `name`. */
@@ -324,7 +324,7 @@ class Headers internal constructor(
   companion object {
     /** Empty headers. */
     @JvmField
-    val Empty = Headers(emptyArray())
+    val EMPTY = Headers(emptyArray())
 
     /**
      * Returns headers for the alternating header names and values. There must be an even number of

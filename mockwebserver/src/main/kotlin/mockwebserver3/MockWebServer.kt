@@ -14,7 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-@file:Suppress("INVISIBLE_MEMBER", "INVISIBLE_REFERENCE")
+@file:Suppress(
+  "CANNOT_OVERRIDE_INVISIBLE_MEMBER",
+  "INVISIBLE_MEMBER",
+  "INVISIBLE_REFERENCE",
+  "ktlint:standard:property-naming",
+)
 
 package mockwebserver3
 
@@ -59,11 +64,13 @@ import mockwebserver3.SocketPolicy.ShutdownInputAtEnd
 import mockwebserver3.SocketPolicy.ShutdownOutputAtEnd
 import mockwebserver3.SocketPolicy.ShutdownServerAfterResponse
 import mockwebserver3.SocketPolicy.StallSocketAtStart
+import mockwebserver3.internal.DEFAULT_REQUEST_LINE
+import mockwebserver3.internal.RecordedRequest
+import mockwebserver3.internal.RequestLine
 import mockwebserver3.internal.ThrottledSink
 import mockwebserver3.internal.TriggerSink
-import mockwebserver3.internal.duplex.RealStream
-import mockwebserver3.internal.sleepNanos
-import okhttp3.ExperimentalOkHttpApi
+import mockwebserver3.internal.decodeRequestLine
+import mockwebserver3.internal.sleepWhileOpen
 import okhttp3.Headers
 import okhttp3.Headers.Companion.headersOf
 import okhttp3.HttpUrl
@@ -88,6 +95,7 @@ import okhttp3.internal.ws.WebSocketProtocol
 import okio.Buffer
 import okio.BufferedSink
 import okio.BufferedSource
+import okio.ByteString
 import okio.Sink
 import okio.Timeout
 import okio.buffer
@@ -98,8 +106,7 @@ import okio.source
  * A scriptable web server. Callers supply canned responses and the server replays them upon request
  * in sequence.
  */
-@ExperimentalOkHttpApi
-class MockWebServer : Closeable {
+public class MockWebServer : Closeable {
   private val taskRunnerBackend =
     TaskRunner.RealBackend(
       threadFactory("MockWebServer TaskRunner", daemon = false),
@@ -113,32 +120,34 @@ class MockWebServer : Closeable {
 
   private val atomicRequestCount = AtomicInteger()
 
+  private var serverSocketFactory_: ServerSocketFactory? = null
+  private var serverSocket: ServerSocket? = null
+
+  /** Non-null after [start]. */
+  private var socketAddress_: InetSocketAddress? = null
+
+  private var sslSocketFactory: SSLSocketFactory? = null
+  private var clientAuth = CLIENT_AUTH_NONE
+
+  private var closed: Boolean = false
+
   /**
    * The number of HTTP requests received thus far by this server. This may exceed the number of
    * HTTP connections when connection reuse is in practice.
    */
-  val requestCount: Int
+  public val requestCount: Int
     get() = atomicRequestCount.get()
 
   /** The number of bytes of the POST body to keep in memory to the given limit. */
-  var bodyLimit: Long = Long.MAX_VALUE
+  public var bodyLimit: Long = Long.MAX_VALUE
 
-  var serverSocketFactory: ServerSocketFactory? = null
-    @Synchronized get() {
-      if (field == null && started) {
-        field = ServerSocketFactory.getDefault() // Build the default value lazily.
-      }
-      return field
-    }
+  public var serverSocketFactory: ServerSocketFactory?
+    @Synchronized get() = serverSocketFactory_
 
     @Synchronized set(value) {
-      check(!started) { "serverSocketFactory must not be set after start()" }
-      field = value
+      check(socketAddress_ == null) { "serverSocketFactory must not be set after start()" }
+      serverSocketFactory_ = value
     }
-
-  private var serverSocket: ServerSocket? = null
-  private var sslSocketFactory: SSLSocketFactory? = null
-  private var clientAuth = CLIENT_AUTH_NONE
 
   /**
    * The dispatcher used to respond to HTTP requests. The default dispatcher is a [QueueDispatcher],
@@ -147,35 +156,27 @@ class MockWebServer : Closeable {
    * Other dispatchers can be configured. They can vary the response based on timing or the content
    * of the request.
    */
-  var dispatcher: Dispatcher = QueueDispatcher()
+  public var dispatcher: Dispatcher = QueueDispatcher()
 
-  private var portField: Int = -1
-  val port: Int
-    get() {
-      before()
-      return portField
-    }
+  public val socketAddress: InetSocketAddress
+    get() = socketAddress_ ?: error("call start() first")
 
-  val hostName: String
-    get() {
-      before()
-      return _inetSocketAddress!!.address.hostName
-    }
+  public val port: Int
+    get() = socketAddress.port
 
-  private var _inetSocketAddress: InetSocketAddress? = null
+  public val hostName: String
+    get() = socketAddress.address.hostName
 
-  val inetSocketAddress: InetSocketAddress
-    get() {
-      before()
-      return InetSocketAddress(hostName, portField)
-    }
+  /** Returns the address of this server, to connect to it as an HTTP proxy. */
+  public val proxyAddress: Proxy
+    get() = Proxy(Proxy.Type.HTTP, socketAddress)
 
   /**
    * True if ALPN is used on incoming HTTPS connections to negotiate a protocol like HTTP/1.1 or
    * HTTP/2. This is true by default; set to false to disable negotiation and restrict connections
    * to HTTP/1.1.
    */
-  var protocolNegotiationEnabled: Boolean = true
+  public var protocolNegotiationEnabled: Boolean = true
 
   /**
    * The protocols supported by ALPN on incoming HTTPS connections in order of preference. The list
@@ -183,7 +184,7 @@ class MockWebServer : Closeable {
    *
    * This list is ignored when [negotiation is disabled][protocolNegotiationEnabled].
    */
-  var protocols: List<Protocol> = immutableListOf(Protocol.HTTP_2, Protocol.HTTP_1_1)
+  public var protocols: List<Protocol> = immutableListOf(Protocol.HTTP_2, Protocol.HTTP_1_1)
     set(value) {
       val protocolList = value.toImmutableList()
       require(Protocol.H2_PRIOR_KNOWLEDGE !in protocolList || protocolList.size == 1) {
@@ -196,30 +197,15 @@ class MockWebServer : Closeable {
       field = protocolList
     }
 
-  var started: Boolean = false
-  private var shutdown: Boolean = false
-
-  @Synchronized private fun before() {
-    if (started) return // Don't call start() in case we're already shut down.
-    try {
-      start()
-    } catch (e: IOException) {
-      throw RuntimeException(e)
-    }
-  }
-
-  fun toProxyAddress(): Proxy {
-    before()
-    val address = InetSocketAddress(_inetSocketAddress!!.address.hostName, port)
-    return Proxy(Proxy.Type.HTTP, address)
-  }
+  public val started: Boolean
+    get() = socketAddress_ != null
 
   /**
    * Returns a URL for connecting to this server.
    *
    * @param path the request path, such as "/".
    */
-  fun url(path: String): HttpUrl =
+  public fun url(path: String): HttpUrl =
     HttpUrl
       .Builder()
       .scheme(if (sslSocketFactory != null) "https" else "http")
@@ -231,7 +217,7 @@ class MockWebServer : Closeable {
   /**
    * Serve requests with HTTPS rather than otherwise.
    */
-  fun useHttps(sslSocketFactory: SSLSocketFactory) {
+  public fun useHttps(sslSocketFactory: SSLSocketFactory) {
     this.sslSocketFactory = sslSocketFactory
   }
 
@@ -240,7 +226,7 @@ class MockWebServer : Closeable {
    * authentication to another layer such as in an HTTP cookie or header. This is the default and
    * most common configuration.
    */
-  fun noClientAuth() {
+  public fun noClientAuth() {
     this.clientAuth = CLIENT_AUTH_NONE
   }
 
@@ -251,7 +237,7 @@ class MockWebServer : Closeable {
    * certificate at all! But if the client presents an untrusted certificate the handshake
    * will fail and no connection will be established.
    */
-  fun requestClientAuth() {
+  public fun requestClientAuth() {
     this.clientAuth = CLIENT_AUTH_REQUESTED
   }
 
@@ -261,7 +247,7 @@ class MockWebServer : Closeable {
    * proceed normally. If the client presents an untrusted certificate or no certificate at all the
    * handshake will fail and no connection will be established.
    */
-  fun requireClientAuth() {
+  public fun requireClientAuth() {
     this.clientAuth = CLIENT_AUTH_REQUIRED
   }
 
@@ -273,7 +259,7 @@ class MockWebServer : Closeable {
    * @return the head of the request queue
    */
   @Throws(InterruptedException::class)
-  fun takeRequest(): RecordedRequest = requestQueue.take()
+  public fun takeRequest(): RecordedRequest = requestQueue.take()
 
   /**
    * Awaits the next HTTP request (waiting up to the specified wait time if necessary), removes it,
@@ -285,7 +271,7 @@ class MockWebServer : Closeable {
    * @return the head of the request queue
    */
   @Throws(InterruptedException::class)
-  fun takeRequest(
+  public fun takeRequest(
     timeout: Long,
     unit: TimeUnit,
   ): RecordedRequest? = requestQueue.poll(timeout, unit)
@@ -298,7 +284,9 @@ class MockWebServer : Closeable {
    * @throws ClassCastException if the default dispatcher has been
    * replaced with [setDispatcher][dispatcher].
    */
-  fun enqueue(response: MockResponse) = (dispatcher as QueueDispatcher).enqueueResponse(response)
+  public fun enqueue(response: MockResponse) {
+    (dispatcher as QueueDispatcher).enqueue(response)
+  }
 
   /**
    * Starts the server on the loopback interface for the given port.
@@ -308,7 +296,9 @@ class MockWebServer : Closeable {
    */
   @Throws(IOException::class)
   @JvmOverloads
-  fun start(port: Int = 0) = start(InetAddress.getByName("localhost"), port)
+  public fun start(port: Int = 0) {
+    start(InetAddress.getByName("localhost"), port)
+  }
 
   /**
    * Starts the server on the given address and port.
@@ -318,34 +308,56 @@ class MockWebServer : Closeable {
    * use port 0 to avoid flakiness when a specific port is unavailable.
    */
   @Throws(IOException::class)
-  fun start(
+  public fun start(
     inetAddress: InetAddress,
     port: Int,
-  ) = start(InetSocketAddress(inetAddress, port))
+  ) {
+    start(InetSocketAddress(inetAddress, port))
+  }
 
   /**
    * Starts the server and binds to the given socket address.
    *
-   * @param inetSocketAddress the socket address to bind the server on
+   * @param socketAddress the socket address to bind the server on
    */
   @Synchronized
   @Throws(IOException::class)
-  private fun start(inetSocketAddress: InetSocketAddress) {
-    check(!shutdown) { "shutdown() already called" }
-    if (started) return
-    started = true
+  private fun start(socketAddress: InetSocketAddress) {
+    check(!closed) { "close() already called" }
 
-    this._inetSocketAddress = inetSocketAddress
+    val alreadyStartedAddress = socketAddress_
+    if (alreadyStartedAddress != null) {
+      check(socketAddress.address == alreadyStartedAddress.address) {
+        "unexpected address"
+      }
+      check(socketAddress.port == 0 || socketAddress.port == alreadyStartedAddress.port) {
+        "unexpected port"
+      }
+      return // Already started.
+    }
 
-    serverSocket = serverSocketFactory!!.createServerSocket()
+    var boundSocketAddress = socketAddress
+    try {
+      val serverSocketFactory =
+        serverSocketFactory_
+          ?: (ServerSocketFactory.getDefault()!!.also { this.serverSocketFactory_ = it })
 
-    // Reuse if the user specified a port
-    serverSocket!!.reuseAddress = inetSocketAddress.port != 0
-    serverSocket!!.bind(inetSocketAddress, 50)
+      val serverSocket =
+        serverSocketFactory
+          .createServerSocket()!!
+          .also { this.serverSocket = it }
 
-    portField = serverSocket!!.localPort
+      // Reuse if the user specified a port
+      serverSocket.reuseAddress = socketAddress.port != 0
+      serverSocket.bind(socketAddress, 50)
 
-    taskRunner.newQueue().execute("MockWebServer $portField", cancelable = false) {
+      // If the local port was 0, it'll be non-zero after bind().
+      boundSocketAddress = InetSocketAddress(boundSocketAddress.address, serverSocket.localPort)
+    } finally {
+      this.socketAddress_ = boundSocketAddress
+    }
+
+    taskRunner.newQueue().execute(toString(), cancelable = false) {
       try {
         logger.fine("$this starting to accept connections")
         acceptConnections()
@@ -367,7 +379,7 @@ class MockWebServer : Closeable {
         httpConnection.next().closeQuietly()
         httpConnection.remove()
       }
-      dispatcher.shutdown()
+      dispatcher.close()
     }
   }
 
@@ -393,22 +405,20 @@ class MockWebServer : Closeable {
     }
   }
 
-  @Synchronized
-  @Throws(IOException::class)
-  fun shutdown() {
-    if (shutdown) return
-    shutdown = true
+  public override fun close() {
+    if (closed) return
+    closed = true
 
     if (!started) return // Nothing to shut down.
     val serverSocket = this.serverSocket ?: return // If this is null, start() must have failed.
 
     // Cause acceptConnections() to break out.
-    serverSocket.close()
+    serverSocket.closeQuietly()
 
     // Await shutdown.
     for (queue in taskRunner.activeQueues()) {
       if (!queue.idleLatch().await(5, TimeUnit.SECONDS)) {
-        throw IOException("Gave up waiting for queue to shut down")
+        throw AssertionError("Gave up waiting for queue to shut down")
       }
     }
     taskRunnerBackend.shutdown()
@@ -614,7 +624,7 @@ class MockWebServer : Closeable {
         }
         ShutdownInputAtEnd -> socket.shutdownInput()
         ShutdownOutputAtEnd -> socket.shutdownOutput()
-        ShutdownServerAfterResponse -> shutdown()
+        ShutdownServerAfterResponse -> close()
         else -> {
         }
       }
@@ -650,13 +660,13 @@ class MockWebServer : Closeable {
   ) {
     val request =
       RecordedRequest(
-        "",
-        headersOf(),
-        emptyList(),
-        0L,
-        Buffer(),
-        sequenceNumber,
-        socket,
+        requestLine = DEFAULT_REQUEST_LINE,
+        headers = headersOf(),
+        chunkSizes = emptyList(),
+        bodySize = 0L,
+        body = null,
+        sequenceNumber = sequenceNumber,
+        socket = socket,
       )
     atomicRequestCount.incrementAndGet()
     requestQueue.add(request)
@@ -671,19 +681,21 @@ class MockWebServer : Closeable {
     sink: BufferedSink,
     sequenceNumber: Int,
   ): RecordedRequest {
-    var request = ""
+    var request: RequestLine = DEFAULT_REQUEST_LINE
     val headers = Headers.Builder()
     var contentLength = -1L
     var chunked = false
+    var hasBody = false
     val requestBody = TruncatingBuffer(bodyLimit)
     val chunkSizes = mutableListOf<Int>()
     var failure: IOException? = null
 
     try {
-      request = source.readUtf8LineStrict()
-      if (request.isEmpty()) {
+      val requestLineString = source.readUtf8LineStrict()
+      if (requestLineString.isEmpty()) {
         throw ProtocolException("no request because the stream is exhausted")
       }
+      request = decodeRequestLine(requestLineString)
 
       while (true) {
         val header = source.readUtf8LineStrict()
@@ -707,7 +719,6 @@ class MockWebServer : Closeable {
         writeHttpResponse(socket, sink, response)
       }
 
-      var hasBody = false
       val policy = dispatcher.peek()
       val requestBodySink =
         requestBody
@@ -720,11 +731,11 @@ class MockWebServer : Closeable {
       requestBodySink.use {
         when {
           policy.socketPolicy is DoNotReadRequestBody -> {
-            // Ignore the body completely.
+            hasBody = false // Ignore the body completely.
           }
 
           contentLength != -1L -> {
-            hasBody = contentLength > 0L
+            hasBody = contentLength > 0L || HttpMethod.permitsRequestBody(request.method)
             requestBodySink.write(source, contentLength)
           }
 
@@ -742,12 +753,13 @@ class MockWebServer : Closeable {
             }
           }
 
-          else -> Unit // No request body.
+          else -> {
+            hasBody = false // No request body.
+          }
         }
       }
 
-      val method = request.substringBefore(' ')
-      require(!hasBody || HttpMethod.permitsRequestBody(method)) {
+      require(!hasBody || HttpMethod.permitsRequestBody(request.method)) {
         "Request must not have a body: $request"
       }
     } catch (e: IOException) {
@@ -759,7 +771,11 @@ class MockWebServer : Closeable {
       headers = headers.build(),
       chunkSizes = chunkSizes,
       bodySize = requestBody.receivedByteCount,
-      body = requestBody.buffer,
+      body =
+        when {
+          hasBody -> requestBody.buffer.readByteString()
+          else -> null
+        },
       sequenceNumber = sequenceNumber,
       socket = socket,
       failure = failure,
@@ -822,7 +838,7 @@ class MockWebServer : Closeable {
         minimumDeflateSize = 0L,
         webSocketCloseTimeout = RealWebSocket.CANCEL_AFTER_CLOSE_MILLIS,
       )
-    val name = "MockWebServer WebSocket ${request.path!!}"
+    val name = "MockWebServer WebSocket ${request.url.encodedPath}"
     webSocket.initReaderAndWriter(name, streams)
     try {
       webSocket.loopReader(fancyResponse)
@@ -840,14 +856,14 @@ class MockWebServer : Closeable {
     sink: BufferedSink,
     response: MockResponse,
   ) {
-    sleepNanos(response.headersDelayNanos)
+    socket.sleepWhileOpen(response.headersDelayNanos)
     sink.writeUtf8(response.status)
     sink.writeUtf8("\r\n")
 
     writeHeaders(sink, response.headers)
 
     val body = response.body ?: return
-    sleepNanos(response.bodyDelayNanos)
+    socket.sleepWhileOpen(response.bodyDelayNanos)
     val responseBodySink =
       sink
         .withThrottlingAndSocketPolicy(
@@ -859,6 +875,7 @@ class MockWebServer : Closeable {
     body.writeTo(responseBodySink)
     responseBodySink.emit()
 
+    socket.sleepWhileOpen(response.trailersDelayNanos)
     if ("chunked".equals(response.headers["Transfer-Encoding"], ignoreCase = true)) {
       writeHeaders(sink, response.trailers)
     }
@@ -891,6 +908,7 @@ class MockWebServer : Closeable {
     if (policy.throttlePeriodNanos > 0L) {
       result =
         ThrottledSink(
+          socket = socket,
           delegate = result,
           bytesPerPeriod = policy.throttleBytesPerPeriod,
           periodDelayNanos = policy.throttlePeriodNanos,
@@ -922,10 +940,14 @@ class MockWebServer : Closeable {
     check(line.isEmpty()) { "Expected empty but was: $line" }
   }
 
-  override fun toString(): String = "MockWebServer[$portField]"
-
-  @Throws(IOException::class)
-  override fun close() = shutdown()
+  public override fun toString(): String {
+    val socketAddress = socketAddress_
+    return when {
+      closed -> "MockWebServer{closed}"
+      socketAddress != null -> "MockWebServer{port=${socketAddress.port}}"
+      else -> "MockWebServer{new}"
+    }
+  }
 
   /** A buffer wrapper that drops data after [bodyLimit] bytes. */
   private class TruncatingBuffer(
@@ -963,7 +985,7 @@ class MockWebServer : Closeable {
   }
 
   /** Processes HTTP requests layered over HTTP/2. */
-  private inner class Http2SocketHandler constructor(
+  private inner class Http2SocketHandler(
     private val socket: Socket,
     private val protocol: Protocol,
   ) : Http2Connection.Listener() {
@@ -1038,17 +1060,23 @@ class MockWebServer : Closeable {
 
       val peek = dispatcher.peek()
       for (response in peek.informationalResponses) {
-        sleepNanos(response.headersDelayNanos)
+        socket.sleepWhileOpen(response.headersDelayNanos)
         stream.writeHeaders(response.toHttp2Headers(), outFinished = false, flushHeaders = true)
         if (response.code == 100) {
           readBody = true
         }
       }
 
-      val body = Buffer()
-      val requestLine = "$method $path HTTP/1.1"
+      val requestLine =
+        RequestLine(
+          method = method,
+          target = path,
+          version = "HTTP/1.1",
+        )
       var exception: IOException? = null
-      if (readBody && peek.streamHandler == null && peek.socketPolicy !is DoNotReadRequestBody) {
+      var bodyByteString: ByteString? = null
+      if (readBody && peek.socketHandler == null && peek.socketPolicy !is DoNotReadRequestBody) {
+        val body = Buffer()
         try {
           val contentLengthString = headers["content-length"]
           val requestBodySink =
@@ -1060,10 +1088,12 @@ class MockWebServer : Closeable {
                 socket = socket,
               ).buffer()
           requestBodySink.use {
-            it.writeAll(stream.getSource())
+            it.writeAll(stream.source)
           }
         } catch (e: IOException) {
           exception = e
+        } finally {
+          bodyByteString = body.readByteString()
         }
       }
 
@@ -1071,8 +1101,12 @@ class MockWebServer : Closeable {
         requestLine = requestLine,
         headers = headers,
         chunkSizes = emptyList(),
-        bodySize = body.size,
-        body = body,
+        bodySize = bodyByteString?.size?.toLong() ?: 0,
+        body =
+          when {
+            HttpMethod.permitsRequestBody(method) -> bodyByteString
+            else -> null
+          },
         sequenceNumber = sequenceNumber.getAndIncrement(),
         socket = socket,
         failure = exception,
@@ -1104,18 +1138,18 @@ class MockWebServer : Closeable {
       val bodyDelayNanos = response.bodyDelayNanos
       val trailers = response.trailers
       val body = response.body
-      val streamHandler = response.streamHandler
+      val socketHandler = response.socketHandler
       val outFinished = (
         body == null &&
           response.pushPromises.isEmpty() &&
-          streamHandler == null
+          socketHandler == null
       )
       val flushHeaders = body == null || bodyDelayNanos != 0L
       require(!outFinished || trailers.size == 0) {
         "unsupported: no body and non-empty trailers $trailers"
       }
 
-      sleepNanos(response.headersDelayNanos)
+      socket.sleepWhileOpen(response.headersDelayNanos)
       stream.writeHeaders(response.toHttp2Headers(), outFinished, flushHeaders)
 
       if (trailers.size > 0) {
@@ -1123,10 +1157,10 @@ class MockWebServer : Closeable {
       }
       pushPromises(stream, request, response.pushPromises)
       if (body != null) {
-        sleepNanos(bodyDelayNanos)
+        socket.sleepWhileOpen(bodyDelayNanos)
         val responseBodySink =
           stream
-            .getSink()
+            .sink
             .withThrottlingAndSocketPolicy(
               policy = response,
               disconnectHalfway = response.socketPolicy == DisconnectDuringResponseBody,
@@ -1134,11 +1168,18 @@ class MockWebServer : Closeable {
               socket = socket,
             ).buffer()
         responseBodySink.use {
-          body.writeTo(responseBodySink)
+          body.writeTo(it)
+
+          // Delay trailers by sleeping before we close the stream. It's the same on the wire.
+          if (response.trailersDelayNanos != 0L) {
+            it.flush()
+            socket.sleepWhileOpen(response.trailersDelayNanos)
+          }
         }
-      } else if (streamHandler != null) {
-        streamHandler.handle(RealStream(stream))
+      } else if (socketHandler != null) {
+        socketHandler.handle(stream)
       } else if (!outFinished) {
+        socket.sleepWhileOpen(response.trailersDelayNanos)
         stream.close(ErrorCode.NO_ERROR, null)
       }
     }
@@ -1158,7 +1199,12 @@ class MockWebServer : Closeable {
         for ((name, value) in pushPromiseHeaders) {
           pushedHeaders.add(Header(name, value))
         }
-        val requestLine = "${pushPromise.method} ${pushPromise.path} HTTP/1.1"
+        val requestLine =
+          RequestLine(
+            method = pushPromise.method,
+            target = pushPromise.path,
+            version = "HTTP/1.1",
+          )
         val chunkSizes = emptyList<Int>() // No chunked encoding for HTTP/2.
         requestQueue.add(
           RecordedRequest(
@@ -1166,7 +1212,7 @@ class MockWebServer : Closeable {
             headers = pushPromise.headers,
             chunkSizes = chunkSizes,
             bodySize = 0,
-            body = Buffer(),
+            body = null,
             sequenceNumber = sequenceNumber.getAndIncrement(),
             socket = socket,
           ),
@@ -1178,8 +1224,7 @@ class MockWebServer : Closeable {
     }
   }
 
-  @ExperimentalOkHttpApi
-  companion object {
+  private companion object {
     private const val CLIENT_AUTH_NONE = 0
     private const val CLIENT_AUTH_REQUESTED = 1
     private const val CLIENT_AUTH_REQUIRED = 2

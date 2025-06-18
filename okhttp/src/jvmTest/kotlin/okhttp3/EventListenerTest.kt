@@ -27,7 +27,6 @@ import assertk.assertions.isInstanceOf
 import assertk.assertions.isNotNull
 import assertk.assertions.isNull
 import assertk.assertions.isSameAs
-import assertk.assertions.isTrue
 import assertk.assertions.prop
 import java.io.File
 import java.io.IOException
@@ -47,6 +46,7 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.SocketPolicy.DisconnectDuringRequestBody
 import mockwebserver3.SocketPolicy.DisconnectDuringResponseBody
 import mockwebserver3.SocketPolicy.FailHandshake
+import mockwebserver3.junit5.StartStop
 import okhttp3.CallEvent.CallEnd
 import okhttp3.CallEvent.CallFailed
 import okhttp3.CallEvent.CallStart
@@ -54,6 +54,7 @@ import okhttp3.CallEvent.ConnectStart
 import okhttp3.CallEvent.ConnectionAcquired
 import okhttp3.CallEvent.DnsEnd
 import okhttp3.CallEvent.DnsStart
+import okhttp3.CallEvent.FollowUpDecision
 import okhttp3.CallEvent.RequestBodyEnd
 import okhttp3.CallEvent.RequestBodyStart
 import okhttp3.CallEvent.RequestHeadersEnd
@@ -99,7 +100,10 @@ class EventListenerTest {
 
   @RegisterExtension
   val clientTestRule = OkHttpClientTestRule()
-  private lateinit var server: MockWebServer
+
+  @StartStop
+  private val server = MockWebServer()
+
   private val listener: RecordingEventListener = RecordingEventListener()
   private val handshakeCertificates = platform.localhostHandshakeCertificates()
   private var client =
@@ -111,8 +115,7 @@ class EventListenerTest {
   private var cache: Cache? = null
 
   @BeforeEach
-  fun setUp(server: MockWebServer) {
-    this.server = server
+  fun setUp() {
     platform.assumeNotOpenJSSE()
     listener.forbidLock(get(client.connectionPool))
     listener.forbidLock(client.dispatcher)
@@ -160,6 +163,7 @@ class EventListenerTest {
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "ConnectionReleased",
@@ -203,6 +207,7 @@ class EventListenerTest {
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "ConnectionReleased",
@@ -258,6 +263,7 @@ class EventListenerTest {
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "ConnectionReleased",
@@ -307,8 +313,7 @@ class EventListenerTest {
       "CallFailed",
     )
     assertThat(listener.findEvent<RetryDecision>()).all {
-      prop(RetryDecision::reason).isEqualTo("request was at least partially sent")
-      prop(RetryDecision::shouldRetry).isFalse()
+      prop(RetryDecision::retry).isFalse()
     }
   }
 
@@ -354,6 +359,7 @@ class EventListenerTest {
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseFailed",
       "ConnectionReleased",
@@ -440,7 +446,10 @@ class EventListenerTest {
     assertThat(listener.recordedEventTypes()).containsExactly("Canceled")
   }
 
-  private fun assertSuccessfulEventOrder(responseMatcher: Matcher<Response?>?) {
+  private fun assertSuccessfulEventOrder(
+    responseMatcher: Matcher<Response?>?,
+    emptyBody: Boolean = false,
+  ) {
     val call =
       client.newCall(
         Request
@@ -453,26 +462,44 @@ class EventListenerTest {
     response.body.string()
     response.body.close()
     Assume.assumeThat(response, responseMatcher)
-    assertThat(listener.recordedEventTypes()).containsExactly(
-      "CallStart",
-      "ProxySelectStart",
-      "ProxySelectEnd",
-      "DnsStart",
-      "DnsEnd",
-      "ConnectStart",
-      "SecureConnectStart",
-      "SecureConnectEnd",
-      "ConnectEnd",
-      "ConnectionAcquired",
-      "RequestHeadersStart",
-      "RequestHeadersEnd",
-      "ResponseHeadersStart",
-      "ResponseHeadersEnd",
-      "ResponseBodyStart",
-      "ResponseBodyEnd",
-      "ConnectionReleased",
-      "CallEnd",
-    )
+    var expectedEventTypes =
+      listOf(
+        "CallStart",
+        "ProxySelectStart",
+        "ProxySelectEnd",
+        "DnsStart",
+        "DnsEnd",
+        "ConnectStart",
+        "SecureConnectStart",
+        "SecureConnectEnd",
+        "ConnectEnd",
+        "ConnectionAcquired",
+        "RequestHeadersStart",
+        "RequestHeadersEnd",
+        "ResponseHeadersStart",
+        "ResponseHeadersEnd",
+      )
+    expectedEventTypes +=
+      when {
+        emptyBody ->
+          listOf(
+            "ResponseBodyStart",
+            "ResponseBodyEnd",
+            "FollowUpDecision",
+          )
+        else ->
+          listOf(
+            "FollowUpDecision",
+            "ResponseBodyStart",
+            "ResponseBodyEnd",
+          )
+      }
+    expectedEventTypes +=
+      listOf(
+        "ConnectionReleased",
+        "CallEnd",
+      )
+    assertThat(listener.recordedEventTypes()).isEqualTo(expectedEventTypes)
   }
 
   @Test
@@ -508,6 +535,7 @@ class EventListenerTest {
       "ResponseHeadersEnd",
       "ResponseBodyStart",
       "ResponseBodyEnd",
+      "FollowUpDecision",
       "ConnectionReleased",
       "CallEnd",
     )
@@ -588,7 +616,7 @@ class EventListenerTest {
     enableTlsWithTunnel()
     server.protocols = Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1)
     server.enqueue(MockResponse())
-    assertSuccessfulEventOrder(matchesProtocol(Protocol.HTTP_2))
+    assertSuccessfulEventOrder(matchesProtocol(Protocol.HTTP_2), emptyBody = true)
     assertBytesReadWritten(
       listener,
       CoreMatchers.any(Long::class.java),
@@ -891,7 +919,7 @@ class EventListenerTest {
     client =
       client
         .newBuilder()
-        .proxy(server.toProxyAddress())
+        .proxy(server.proxyAddress)
         .build()
     val call =
       client.newCall(
@@ -910,7 +938,7 @@ class EventListenerTest {
     assertThat(connectStart.call).isSameAs(call)
     assertThat(connectStart.inetSocketAddress).isEqualTo(expectedAddress)
     assertThat(connectStart.proxy).isEqualTo(
-      server.toProxyAddress(),
+      server.proxyAddress,
     )
     val connectEnd = listener.removeUpToEvent<CallEvent.ConnectEnd>()
     assertThat(connectEnd.call).isSameAs(call)
@@ -976,7 +1004,7 @@ class EventListenerTest {
     client =
       client
         .newBuilder()
-        .proxy(server.toProxyAddress())
+        .proxy(server.proxyAddress)
         .proxyAuthenticator(RecordingOkAuthenticator("password", "Basic"))
         .build()
     val call =
@@ -1056,7 +1084,7 @@ class EventListenerTest {
     client =
       client
         .newBuilder()
-        .proxy(server.toProxyAddress())
+        .proxy(server.proxyAddress)
         .build()
     val call =
       client.newCall(
@@ -1338,6 +1366,7 @@ class EventListenerTest {
       "ResponseHeadersEnd",
       "ResponseBodyStart",
       "ResponseBodyEnd",
+      "FollowUpDecision",
       "ConnectionReleased",
       "CallEnd",
     )
@@ -1376,6 +1405,7 @@ class EventListenerTest {
       "ResponseHeadersEnd",
       "ResponseBodyStart",
       "ResponseBodyEnd",
+      "FollowUpDecision",
       "ConnectionReleased",
       "CallEnd",
     )
@@ -1413,6 +1443,7 @@ class EventListenerTest {
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "ConnectionReleased",
@@ -1546,6 +1577,7 @@ class EventListenerTest {
       "RequestBodyStart",
       "RequestFailed",
       "ResponseFailed",
+      "RetryDecision",
       "ConnectionReleased",
       "CallFailed",
     )
@@ -1647,6 +1679,7 @@ class EventListenerTest {
       "ResponseHeadersEnd",
       "ResponseBodyStart",
       "ResponseBodyEnd",
+      "FollowUpDecision",
       "ConnectionReleased",
       "CallEnd",
     )
@@ -1795,6 +1828,7 @@ class EventListenerTest {
     listener.takeEvent(RequestBodyEnd::class.java, requestBodyDelay)
     listener.takeEvent(ResponseHeadersStart::class.java, responseHeadersStartDelay)
     listener.takeEvent(ResponseHeadersEnd::class.java, 0L)
+    listener.takeEvent(FollowUpDecision::class.java, 0L)
     listener.takeEvent(ResponseBodyStart::class.java, responseBodyStartDelay)
     listener.takeEvent(ResponseBodyEnd::class.java, responseBodyEndDelay)
     listener.takeEvent(CallEvent.ConnectionReleased::class.java, 0L)
@@ -1840,25 +1874,26 @@ class EventListenerTest {
       "ResponseHeadersEnd",
       "ResponseBodyStart",
       "ResponseBodyEnd",
-      "RetryDecision",
+      "FollowUpDecision",
       "RequestHeadersStart",
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
       "ResponseBodyStart",
       "ResponseBodyEnd",
+      "FollowUpDecision",
       "ConnectionReleased",
       "CallEnd",
     )
-    assertThat(listener.findEvent<RetryDecision>()).all {
-      prop(RetryDecision::reason).isEqualTo("redirect (302)")
-      prop(RetryDecision::shouldRetry).isTrue()
+    assertThat(listener.findEvent<FollowUpDecision>()).all {
+      prop(FollowUpDecision::nextRequest).isNotNull()
     }
   }
 
   @Test
   fun redirectUsingNewConnectionEventSequence() {
     val otherServer = MockWebServer()
+    otherServer.start()
     server.enqueue(
       MockResponse
         .Builder()
@@ -1884,7 +1919,7 @@ class EventListenerTest {
       "ResponseHeadersEnd",
       "ResponseBodyStart",
       "ResponseBodyEnd",
-      "RetryDecision",
+      "FollowUpDecision",
       "ConnectionReleased",
       "ProxySelectStart",
       "ProxySelectEnd",
@@ -1899,13 +1934,14 @@ class EventListenerTest {
       "ResponseHeadersEnd",
       "ResponseBodyStart",
       "ResponseBodyEnd",
+      "FollowUpDecision",
       "ConnectionReleased",
       "CallEnd",
     )
-    assertThat(listener.findEvent<RetryDecision>()).all {
-      prop(RetryDecision::reason).isEqualTo("redirect (302)")
-      prop(RetryDecision::shouldRetry).isTrue()
+    assertThat(listener.findEvent<FollowUpDecision>()).all {
+      prop(FollowUpDecision::nextRequest).isNotNull()
     }
+    otherServer.close()
   }
 
   @Test
@@ -1939,12 +1975,14 @@ class EventListenerTest {
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "RequestHeadersStart",
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "ConnectionReleased",
@@ -2013,6 +2051,7 @@ class EventListenerTest {
       "ResponseHeadersEnd",
       "ResponseBodyStart",
       "ResponseBodyEnd",
+      "FollowUpDecision",
       "ConnectionReleased",
       "CallEnd",
     )
@@ -2079,6 +2118,7 @@ class EventListenerTest {
       "RequestHeadersEnd",
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "ConnectionReleased",
@@ -2129,6 +2169,7 @@ class EventListenerTest {
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "CacheHit",
+      "FollowUpDecision",
       "ConnectionReleased",
       "CallEnd",
     )
@@ -2177,6 +2218,7 @@ class EventListenerTest {
       "ResponseHeadersStart",
       "ResponseHeadersEnd",
       "CacheMiss",
+      "FollowUpDecision",
       "ResponseBodyStart",
       "ResponseBodyEnd",
       "ConnectionReleased",
@@ -2199,10 +2241,9 @@ class EventListenerTest {
     assertThat(response.code).isEqualTo(504)
     response.close()
     assertThat(listener.recordedEventTypes())
-      .containsExactly("CallStart", "SatisfactionFailure", "RetryDecision", "CallEnd")
-    assertThat(listener.findEvent<RetryDecision>()).all {
-      prop(RetryDecision::reason).isEqualTo("No rule to retry request (504)")
-      prop(RetryDecision::shouldRetry).isFalse()
+      .containsExactly("CallStart", "SatisfactionFailure", "FollowUpDecision", "CallEnd")
+    assertThat(listener.findEvent<FollowUpDecision>()).all {
+      prop(FollowUpDecision::nextRequest).isNull()
     }
   }
 
@@ -2234,7 +2275,7 @@ class EventListenerTest {
     assertThat(response.body.string()).isEqualTo("abc")
     response.close()
     assertThat(listener.recordedEventTypes())
-      .containsExactly("CallStart", "CacheHit", "CallEnd")
+      .containsExactly("CallStart", "CacheHit", "FollowUpDecision", "CallEnd")
   }
 
   private fun enableCache(): Cache? {

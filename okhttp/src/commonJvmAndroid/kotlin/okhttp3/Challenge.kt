@@ -17,12 +17,9 @@ package okhttp3
 
 import java.nio.charset.Charset
 import java.util.Collections.singletonMap
-import java.util.Collections.unmodifiableMap
 import java.util.Locale.US
 import kotlin.text.Charsets.ISO_8859_1
-import okhttp3.internal.commonEquals
-import okhttp3.internal.commonHashCode
-import okhttp3.internal.commonToString
+import okhttp3.internal.unmodifiable
 
 /**
  * An [RFC 7235][rfc_7235] challenge.
@@ -68,7 +65,7 @@ class Challenge(
       val newKey = key?.lowercase(US)
       newAuthParams[newKey] = value
     }
-    this.authParams = unmodifiableMap<String?, String>(newAuthParams)
+    this.authParams = newAuthParams.unmodifiable()
   }
 
   /** Returns a copy of this charset that expects a credential encoded with [charset]. */
@@ -110,9 +107,17 @@ class Challenge(
   )
   fun charset(): Charset = charset
 
-  override fun equals(other: Any?): Boolean = commonEquals(other)
+  override fun equals(other: Any?): Boolean =
+    other is Challenge &&
+      other.scheme == scheme &&
+      other.authParams == authParams
 
-  override fun hashCode(): Int = commonHashCode()
+  override fun hashCode(): Int {
+    var result = 29
+    result = 31 * result + scheme.hashCode()
+    result = 31 * result + authParams.hashCode()
+    return result
+  }
 
-  override fun toString(): String = commonToString()
+  override fun toString(): String = "$scheme authParams=$authParams"
 }

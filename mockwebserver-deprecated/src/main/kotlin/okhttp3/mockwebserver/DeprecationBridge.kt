@@ -30,6 +30,8 @@ import mockwebserver3.SocketPolicy.ShutdownInputAtEnd
 import mockwebserver3.SocketPolicy.ShutdownOutputAtEnd
 import mockwebserver3.SocketPolicy.ShutdownServerAfterResponse
 import mockwebserver3.SocketPolicy.StallSocketAtStart
+import okio.Buffer
+import okio.ByteString
 
 internal fun Dispatcher.wrap(): mockwebserver3.Dispatcher {
   if (this is QueueDispatcher) return this.delegate
@@ -40,7 +42,7 @@ internal fun Dispatcher.wrap(): mockwebserver3.Dispatcher {
 
     override fun peek(): mockwebserver3.MockResponse = delegate.peek().wrap()
 
-    override fun shutdown() {
+    override fun close() {
       delegate.shutdown()
     }
   }
@@ -61,10 +63,10 @@ internal fun MockResponse.wrap(): mockwebserver3.MockResponse {
   }
 
   result.settings(settings)
-  result.status = status
+  result.status(status)
   result.headers(headers)
   result.trailers(trailers)
-  result.socketPolicy =
+  result.socketPolicy(
     when (socketPolicy) {
       SocketPolicy.EXPECT_CONTINUE, SocketPolicy.CONTINUE_ALWAYS -> {
         result.add100Continue()
@@ -75,7 +77,8 @@ internal fun MockResponse.wrap(): mockwebserver3.MockResponse {
         KeepOpen
       }
       else -> wrapSocketPolicy()
-    }
+    },
+  )
   result.throttleBody(throttleBytesPerPeriod, getThrottlePeriod(MILLISECONDS), MILLISECONDS)
   result.bodyDelay(getBodyDelay(MILLISECONDS), MILLISECONDS)
   result.headersDelay(getHeadersDelay(MILLISECONDS), MILLISECONDS)
@@ -96,13 +99,13 @@ internal fun mockwebserver3.RecordedRequest.unwrap(): RecordedRequest =
     headers = headers,
     chunkSizes = chunkSizes,
     bodySize = bodySize,
-    body = body,
+    body = Buffer().write(body ?: ByteString.EMPTY),
     sequenceNumber = sequenceNumber,
     failure = failure,
     method = method,
-    path = path,
+    path = url.encodedPath,
     handshake = handshake,
-    requestUrl = requestUrl,
+    requestUrl = url,
   )
 
 private fun MockResponse.wrapSocketPolicy(): mockwebserver3.SocketPolicy =
